@@ -200,6 +200,8 @@ class FirebaseService {
       'status': 'idle',
       'amount': 0,
       'last_uid': FieldValue.delete(),
+      'saldo_result': FieldValue.delete(),
+      'nama_result': FieldValue.delete(),
     }, SetOptions(merge: true));
   }
 
@@ -525,24 +527,41 @@ class FirebaseService {
 
   // Cek Saldo: lookup user by uid_kartu, write saldo_result + nama_result back to machine
   Future<void> processCekSaldo(String machineId, String uidKartu) async {
-    final uid = _normalizeUid(uidKartu);
-    final snap = await _db.collection('users').doc(uid).get();
-    if (!snap.exists) {
-      await _db.collection('machine_commands').doc(machineId).set({
-        'status': 'error',
-        'nama_result': 'Kartu tidak dikenal',
-        'last_uid': FieldValue.delete(),
-        'saldo_result': FieldValue.delete(),
-      }, SetOptions(merge: true));
-      return;
+    try {
+      final uid = _normalizeUid(uidKartu);
+      final userRef = _db.collection('users').doc(uid);
+      final machineRef = _db.collection('machine_commands').doc(machineId);
+
+      await _db.runTransaction((tx) async {
+        // Guard: cek status sebelum proses — hindari concurrent taps
+        final machineSnap = await tx.get(machineRef);
+        final machineStatus = machineSnap.data()?['status'] as String?;
+        if (machineStatus != 'waiting_check') throw Exception('already_processed');
+
+        final userSnap = await tx.get(userRef);
+        if (!userSnap.exists) throw Exception('Kartu tidak dikenal');
+
+        final userData = userSnap.data()!;
+        tx.set(machineRef, {
+          'status': 'showing_saldo',
+          'saldo_result': (userData['saldo'] ?? 0).toDouble(),
+          'nama_result': userData['nama'] ?? 'Siswa',
+          'last_uid': FieldValue.delete(),
+        }, SetOptions(merge: true));
+      });
+    } catch (e) {
+      if (e.toString().contains('already_processed')) return;
+      debugPrint("Cek Saldo Error: $e");
+      try {
+        await _db.collection('machine_commands').doc(machineId).set({
+          'status': 'error',
+          'nama_result': 'Kartu tidak dikenal',
+          'last_uid': FieldValue.delete(),
+        }, SetOptions(merge: true));
+      } catch (e2) {
+        debugPrint("Error writing error status: $e2");
+      }
     }
-    final data = snap.data()!;
-    await _db.collection('machine_commands').doc(machineId).set({
-      'status': 'showing_saldo',
-      'saldo_result': (data['saldo'] ?? 0).toDouble(),
-      'nama_result': data['nama'] ?? 'Siswa',
-      'last_uid': FieldValue.delete(),
-    }, SetOptions(merge: true));
   }
 
   // Machine heartbeat: hardware writes this every ~30s; admin UI uses it to detect offline
@@ -703,5 +722,45 @@ class FirebaseService {
         'keterangan': 'Top-up Saldo',
       });
     });
+  }
+
+  // Action: Process Topup/Daftar Card (tujuan='topup_daftar' mode)
+  // Hardware scan kartu → app verify user exists + record UID for admin topup/daftar flow
+  Future<void> processTopupDaftarCard(String uid, String machineId) async {
+    try {
+      final userRef = _db.collection('users').doc(_normalizeUid(uid));
+      final machineRef = _db.collection('machine_commands').doc(machineId);
+
+      await _db.runTransaction((tx) async {
+        // Guard: prevent double-processing
+        final machineSnap = await tx.get(machineRef);
+        final machineStatus = machineSnap.data()?['status'] as String?;
+        if (machineStatus != 'waiting_uid') throw Exception('already_processed');
+
+        final userSnap = await tx.get(userRef);
+        if (!userSnap.exists) throw Exception('Kartu_tidak_terdaftar');
+
+        // Success: UID recorded, admin app will proceed with topup/registration
+        tx.set(machineRef, {
+          'status': 'success',
+          'last_uid': FieldValue.delete(),
+        }, SetOptions(merge: true));
+      });
+    } catch (e) {
+      if (e.toString().contains('already_processed')) return;
+      debugPrint("Topup Daftar Error: $e");
+      try {
+        final errorMsg = e.toString().contains('tidak_terdaftar')
+            ? 'Kartu tidak terdaftar di sistem'
+            : 'Error memproses kartu';
+        await _db.collection('machine_commands').doc(machineId).set({
+          'status': 'error',
+          'nama_result': errorMsg,
+          'last_uid': FieldValue.delete(),
+        }, SetOptions(merge: true));
+      } catch (e2) {
+        debugPrint("Error writing error status: $e2");
+      }
+    }
   }
 }
