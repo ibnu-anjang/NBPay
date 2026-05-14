@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // For admin/penjual their Firestore doc ID == authUid.
+    // For siswa their doc ID == uidKartu, so this path won't exist → returns null.
+    // Firebase caches get() results per evaluation, so multiple calls to the same
+    // path count as ONE read. isAdmin() + isPenjual() together = 1 get() read.
+    function staffData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Short-circuit: if doc doesn't exist, data() returns null and .role throws →
+    // Firebase rules treat that as false (not a runtime error in boolean context).
+    // We use exists() as a cheaper pre-check to avoid the get() for students.
+    function isStaff() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isStaff() && staffData().role == 'admin';
+    }
+
+    function isPenjual() {
+      return isStaff() && staffData().role == 'penjual';
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isAdmin() || isPenjual()
+                  || (isSignedIn() && (userId == request.auth.uid
+                      || resource.data.auth_uid == request.auth.uid));
+
+      allow create, delete: if isAdmin();
+
+      // Penjual can only change saldo (needed for processSale debit/credit).
+      // Siswa cannot write their own doc at all.
+      allow update: if isAdmin()
+                    || (isPenjual() &&
+                        request.resource.data.diff(resource.data).affectedKeys()
+                            .hasOnly(['saldo']));
+    }
+
+    // ── Transactions ──────────────────────────────────────────────────────────
+    match /transactions/{txId} {
+      // Any authenticated user can read. Siswa uidKartu ≠ authUid so we cannot
+      // match ownership in rules without an extra get(); for a school canteen this
+      // tradeoff is accepted. The app only queries the user's own transactions.
+      allow read: if isSignedIn();
+
+      // Only staff can create transactions (payment/topup/withdrawal flows).
+      allow create: if isAdmin() || isPenjual();
+
+      // Transactions are immutable records.
+      allow update, delete: if false;
+    }
+
+    // ── Machine Commands ──────────────────────────────────────────────────────
+    // Hardware uses Admin SDK (service account) which bypasses these rules.
+    match /machine_commands/{machineId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isPenjual();
+    }
+
+    // ── Settings ─────────────────────────────────────────────────────────────
+    match /settings/{doc} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Top-up Requests ───────────────────────────────────────────────────────
+    match /topup_requests/{reqId} {
+      allow read: if isAdmin()
+                  || (isSignedIn() && resource.data.uid_kartu == request.auth.uid);
+
+      // Siswa can submit only if: not staff, status must be 'pending', and
+      // no other pending request exists for the same uid_kartu (enforced in app layer;
+      // rules cannot check count without get() per doc).
+      allow create: if isSignedIn() && !isStaff()
+                    && request.resource.data.status == 'pending';
+
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ── Menus ─────────────────────────────────────────────────────────────────
+    match /menus/{menuId} {
+      allow read: if isSignedIn();
+
+      allow create: if isAdmin()
+                    || (isPenjual() &&
+                        request.resource.data.penjual_uid == request.auth.uid);
+
+      allow update, delete: if isAdmin()
+                    || (isPenjual() && resource.data.penjual_uid == request.auth.uid);
+    }
+
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "nbpay-55455",
+          "appId": "1:849692561265:android:ea4645f3a814b8682630d0",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "nbpay-55455",
+          "configurations": {
+            "android": "1:849692561265:android:ea4645f3a814b8682630d0",
+            "web": "1:849692561265:web:ba723d3e0226b6722630d0"
+          }
+        }
+      }
+    }
+  }
+}
