@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/firebase_service.dart';
+import '../../utils/validators.dart';
 import '../../widgets/app_theme.dart';
 
 /// Screen untuk handle hardware-triggered card scan (topup_daftar mode)
@@ -95,11 +96,35 @@ class _CardScannerScreenState extends State<CardScannerScreen> {
   }
 
   Future<void> _registerStudent() async {
-    if (_namaCtrl.text.isEmpty || _nisCtrl.text.isEmpty ||
-        _usernameCtrl.text.isEmpty || _passwordCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Semua field wajib diisi')),
-      );
+    // Validation
+    final namaError = Validators.validateNama(_namaCtrl.text);
+    final nisError = Validators.validateNIS(_nisCtrl.text);
+    final usernameError = Validators.validateUsername(_usernameCtrl.text);
+    final passwordError = Validators.validatePassword(_passwordCtrl.text);
+
+    if (namaError != null || nisError != null || usernameError != null || passwordError != null) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Validasi Gagal'),
+            backgroundColor: AppTheme.cardColor,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (namaError != null) Text('• $namaError', style: const TextStyle(color: Colors.white70)),
+                if (nisError != null) Text('• $nisError', style: const TextStyle(color: Colors.white70)),
+                if (usernameError != null) Text('• $usernameError', style: const TextStyle(color: Colors.white70)),
+                if (passwordError != null) Text('• $passwordError', style: const TextStyle(color: Colors.white70)),
+              ],
+            ),
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+      }
       return;
     }
 
@@ -114,50 +139,99 @@ class _CardScannerScreenState extends State<CardScannerScreen> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Siswa berhasil didaftarkan'), duration: Duration(seconds: 2)),
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Sukses'),
+            backgroundColor: AppTheme.cardColor,
+            content: const Text('Siswa berhasil didaftarkan'),
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
         );
+        await Future.delayed(const Duration(milliseconds: 500));
         await _svc.resetMachine(_selectedMachineId!);
         _resetForm();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+        final errorMsg = e.toString().contains('already exists')
+            ? 'UID sudah terdaftar. Gunakan kartu lain atau check database.'
+            : 'Error: ${e.toString()}';
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Error'),
+            backgroundColor: AppTheme.cardColor,
+            content: Text(errorMsg),
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
         );
       }
     } finally {
-      setState(() => _isRegistering = false);
+      if (mounted) setState(() => _isRegistering = false);
     }
   }
 
   Future<void> _topupStudent() async {
-    final amount = double.tryParse(_amountCtrl.text.replaceAll('.', ''));
-    if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Input amount harus valid')),
-      );
+    final amountError = Validators.validateAmount(_amountCtrl.text);
+    if (amountError != null) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Validasi Gagal'),
+            backgroundColor: AppTheme.cardColor,
+            content: Text(amountError),
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+      }
       return;
     }
+
+    final amount = double.parse(_amountCtrl.text.replaceAll('.', ''));
 
     setState(() => _isTopping = true);
     try {
       await _svc.topUp(_scannedUid!, amount);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Top-up Rp ${_fmt.format(amount)} berhasil')),
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Sukses'),
+            backgroundColor: AppTheme.cardColor,
+            content: Text('Top-up ${Validators.formatCurrency(amount)} berhasil'),
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
         );
+        await Future.delayed(const Duration(milliseconds: 500));
         await _svc.resetMachine(_selectedMachineId!);
         _resetForm();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Error'),
+            backgroundColor: AppTheme.cardColor,
+            content: Text('Error: ${e.toString()}'),
+            actions: [
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
         );
       }
     } finally {
-      setState(() => _isTopping = false);
+      if (mounted) setState(() => _isTopping = false);
     }
   }
 

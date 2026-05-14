@@ -154,9 +154,17 @@ class FirebaseService {
     required String username,
     required String password,
   }) async {
+    final normalizedUid = _normalizeUid(uidKartu);
+
+    // Check if UID already exists
+    final existingUser = await _db.collection('users').doc(normalizedUid).get();
+    if (existingUser.exists) {
+      throw Exception('UID_ALREADY_REGISTERED: Kartu ini sudah terdaftar di sistem');
+    }
+
     final authUid = await _createAuthUser(_usernameToEmail(username), password);
-    await _db.collection('users').doc(uidKartu).set({
-      'uid_kartu': uidKartu,
+    await _db.collection('users').doc(normalizedUid).set({
+      'uid_kartu': normalizedUid,
       'nama': nama,
       'role': 'siswa',
       'saldo': 0,
@@ -303,6 +311,9 @@ class FirebaseService {
 
   /// Admin manually sets a user's saldo.
   Future<void> setSaldo(String docId, double saldo) async {
+    if (saldo < 0) throw Exception('Saldo tidak boleh negatif');
+    if (saldo > 999999999) throw Exception('Saldo terlalu besar (max Rp 999.999.999)');
+
     final ref = _db.collection('users').doc(docId);
     await _db.runTransaction((tx) async {
       final snap = await tx.get(ref);
