@@ -1,9 +1,23 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../services/firebase_service.dart';
 import '../../models/user_model.dart';
 import '../../widgets/app_theme.dart';
+
+class _ThousandSeparatorFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll('.', '');
+    if (digits.isEmpty) return newValue.copyWith(text: '');
+    final formatted = NumberFormat('#,###', 'id_ID').format(int.parse(digits));
+    return newValue.copyWith(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({super.key});
@@ -229,7 +243,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     final nisCtrl = TextEditingController(text: s.nis);
     final uidKartuCtrl = TextEditingController(text: s.uidKartu ?? '');
     final saldoCtrl = TextEditingController(
-      text: s.saldo > 0 ? s.saldo.toInt().toString() : '',
+      text: s.saldo > 0 ? NumberFormat('#,###', 'id_ID').format(s.saldo.toInt()) : '',
     );
     bool scanningUid = false;
     String? error;
@@ -272,9 +286,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _DialogField(controller: namaCtrl, label: 'Nama Siswa'),
+              _DialogField(controller: namaCtrl, label: 'Nama Siswa', action: TextInputAction.next),
               const SizedBox(height: 12),
-              _DialogField(controller: nisCtrl, label: 'NIS', keyboard: TextInputType.number),
+              _DialogField(controller: nisCtrl, label: 'NIS', keyboard: TextInputType.number, action: TextInputAction.next),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -309,6 +323,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 controller: saldoCtrl,
                 label: 'Set Saldo Manual (kosongkan jika tidak diubah)',
                 keyboard: TextInputType.number,
+                inputFormatters: [_ThousandSeparatorFormatter()],
               ),
               const SizedBox(height: 12),
               Container(
@@ -359,7 +374,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     'nis': nisCtrl.text.trim(),
                     if (uidKartuCtrl.text.trim().isNotEmpty) 'uid_kartu': uidKartuCtrl.text.trim(),
                   });
-                  final saldoText = saldoCtrl.text.trim();
+                  final saldoText = saldoCtrl.text.trim().replaceAll('.', '');
                   if (saldoText.isNotEmpty) {
                     final newSaldo = double.tryParse(saldoText);
                     if (newSaldo != null) await _svc.setSaldo(docId, newSaldo);
@@ -490,13 +505,17 @@ class _DialogField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final TextInputType? keyboard;
-  const _DialogField({required this.controller, required this.label, this.keyboard});
+  final List<TextInputFormatter>? inputFormatters;
+  final TextInputAction? action;
+  const _DialogField({required this.controller, required this.label, this.keyboard, this.inputFormatters, this.action});
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       keyboardType: keyboard,
+      inputFormatters: inputFormatters,
+      textInputAction: action ?? TextInputAction.done,
       decoration: InputDecoration(
         labelText: label,
         filled: true,

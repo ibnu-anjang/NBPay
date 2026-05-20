@@ -77,8 +77,7 @@ service cloud.firestore {
 
     // ── Top-up Requests ───────────────────────────────────────────────────────
     match /topup_requests/{reqId} {
-      allow read: if isAdmin()
-                  || (isSignedIn() && resource.data.uid_kartu == request.auth.uid);
+      allow read: if isSignedIn();
 
       // Siswa can submit only if: not staff, status must be 'pending', and
       // no other pending request exists for the same uid_kartu (enforced in app layer;

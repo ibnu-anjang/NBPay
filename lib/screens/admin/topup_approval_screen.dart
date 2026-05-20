@@ -78,11 +78,11 @@ class _TopUpApprovalScreenState extends State<TopUpApprovalScreen> {
               children: [
                 const Text('Transfer', style: TextStyle(color: Colors.white54, fontSize: 12)),
                 const SizedBox(height: 8),
-                _DialogField(controller: bankCtrl, label: 'Nama Bank'),
+                _DialogField(controller: bankCtrl, label: 'Nama Bank', action: TextInputAction.next),
                 const SizedBox(height: 10),
-                _DialogField(controller: accNumCtrl, label: 'No. Rekening', inputType: TextInputType.number),
+                _DialogField(controller: accNumCtrl, label: 'No. Rekening', inputType: TextInputType.number, action: TextInputAction.next),
                 const SizedBox(height: 10),
-                _DialogField(controller: accNameCtrl, label: 'Atas Nama'),
+                _DialogField(controller: accNameCtrl, label: 'Atas Nama', action: TextInputAction.next),
                 const SizedBox(height: 16),
                 const Text('QRIS', style: TextStyle(color: Colors.white54, fontSize: 12)),
                 const SizedBox(height: 8),
@@ -362,13 +362,15 @@ class _DialogField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final TextInputType inputType;
-  const _DialogField({required this.controller, required this.label, this.inputType = TextInputType.text});
+  final TextInputAction? action;
+  const _DialogField({required this.controller, required this.label, this.inputType = TextInputType.text, this.action});
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       keyboardType: inputType,
+      textInputAction: action ?? TextInputAction.done,
       decoration: InputDecoration(
         labelText: label,
         filled: true,

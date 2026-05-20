@@ -44,9 +44,9 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _Field(controller: namaCtrl, label: 'Nama Admin'),
+              _Field(controller: namaCtrl, label: 'Nama Admin', action: TextInputAction.next),
               const SizedBox(height: 12),
-              _Field(controller: usernameCtrl, label: 'Username'),
+              _Field(controller: usernameCtrl, label: 'Username', action: TextInputAction.next),
               const SizedBox(height: 4),
               const Text('Username tidak dapat diubah setelah ditambahkan.',
                   style: TextStyle(color: Colors.white38, fontSize: 11)),
@@ -246,12 +246,14 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
 class _Field extends StatelessWidget {
   final TextEditingController controller;
   final String label;
-  const _Field({required this.controller, required this.label});
+  final TextInputAction? action;
+  const _Field({required this.controller, required this.label, this.action});
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      textInputAction: action ?? TextInputAction.done,
       decoration: InputDecoration(
         labelText: label,
         filled: true,

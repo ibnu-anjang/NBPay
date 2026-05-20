@@ -7,8 +7,6 @@ import 'user_management_screen.dart';
 import 'penjual_management_screen.dart';
 import 'admin_management_screen.dart';
 import 'machine_management_screen.dart';
-import 'card_scanner_screen.dart';
-import 'machine_simulator_screen.dart';
 import 'penjual_withdrawal_screen.dart';
 import '../../services/firebase_service.dart';
 import '../../models/user_model.dart';
@@ -66,8 +64,6 @@ class _AdminShellState extends State<AdminShell> {
     const PenjualWithdrawalScreen(),
     const AdminManagementScreen(),
     const MachineManagementScreen(),
-    const CardScannerScreen(),
-    const MachineSimulatorScreen(),
   ];
 
   @override
@@ -104,8 +100,6 @@ class _AdminShellState extends State<AdminShell> {
           BottomNavigationBarItem(icon: Icon(Icons.payments_outlined), label: 'Tarik'),
           BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings_outlined), label: 'Admin'),
           BottomNavigationBarItem(icon: Icon(Icons.point_of_sale_outlined), label: 'Mesin'),
-          BottomNavigationBarItem(icon: Icon(Icons.nfc_outlined), label: 'Scan Kartu'),
-          BottomNavigationBarItem(icon: Icon(Icons.science_outlined), label: 'Simulator'),
         ],
       ),
     );

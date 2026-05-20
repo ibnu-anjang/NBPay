@@ -1,9 +1,23 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../services/firebase_service.dart';
 import '../../models/user_model.dart';
 import '../../widgets/app_theme.dart';
+
+class _ThousandSeparatorFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll('.', '');
+    if (digits.isEmpty) return newValue.copyWith(text: '');
+    final formatted = NumberFormat('#,###', 'id_ID').format(int.parse(digits));
+    return newValue.copyWith(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 class PenjualManagementScreen extends StatefulWidget {
   const PenjualManagementScreen({super.key});
@@ -99,9 +113,9 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _DialogField(controller: namaCtrl, label: 'Nama Penjual'),
+                  _DialogField(controller: namaCtrl, label: 'Nama Penjual', action: TextInputAction.next),
                   const SizedBox(height: 12),
-                  _DialogField(controller: usernameCtrl, label: 'Username'),
+                  _DialogField(controller: usernameCtrl, label: 'Username', action: TextInputAction.next),
                   const SizedBox(height: 4),
                   const Text('Username tidak dapat diubah setelah ditambahkan.',
                       style: TextStyle(color: Colors.white38, fontSize: 11)),
@@ -225,7 +239,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
     final namaCtrl = TextEditingController(text: p.nama);
     final uidKartuCtrl = TextEditingController(text: p.uidKartu ?? '');
     final saldoCtrl = TextEditingController(
-      text: p.saldo > 0 ? p.saldo.toInt().toString() : '',
+      text: p.saldo > 0 ? NumberFormat('#,###', 'id_ID').format(p.saldo.toInt()) : '',
     );
     bool scanningUid = false;
     String? error;
@@ -270,7 +284,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _DialogField(controller: namaCtrl, label: 'Nama Penjual'),
+                  _DialogField(controller: namaCtrl, label: 'Nama Penjual', action: TextInputAction.next),
                   const SizedBox(height: 12),
                   if (_machines.length > 1) ...[
                     DropdownButtonFormField<String>(
@@ -345,6 +359,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                     controller: saldoCtrl,
                     label: 'Set Saldo Manual (kosongkan jika tidak diubah)',
                     keyboard: TextInputType.number,
+                    inputFormatters: [_ThousandSeparatorFormatter()],
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -397,7 +412,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                     if (uid.isNotEmpty) updates['uid_kartu'] = uid;
                     await _svc.updateUser(p.authUid!, updates);
 
-                    final saldoText = saldoCtrl.text.trim();
+                    final saldoText = saldoCtrl.text.trim().replaceAll('.', '');
                     if (saldoText.isNotEmpty) {
                       final newSaldo = double.tryParse(saldoText);
                       if (newSaldo != null) await _svc.setSaldo(p.authUid!, newSaldo);
@@ -531,13 +546,17 @@ class _DialogField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final TextInputType? keyboard;
-  const _DialogField({required this.controller, required this.label, this.keyboard});
+  final List<TextInputFormatter>? inputFormatters;
+  final TextInputAction? action;
+  const _DialogField({required this.controller, required this.label, this.keyboard, this.inputFormatters, this.action});
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       keyboardType: keyboard,
+      inputFormatters: inputFormatters,
+      textInputAction: action ?? TextInputAction.done,
       decoration: InputDecoration(
         labelText: label,
         filled: true,

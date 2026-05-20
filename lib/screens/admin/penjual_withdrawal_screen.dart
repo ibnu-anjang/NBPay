@@ -366,6 +366,7 @@ class _PenjualWithdrawalScreenState extends State<PenjualWithdrawalScreen> {
                             controller: _amountCtrl,
                             keyboardType: TextInputType.number,
                             inputFormatters: [_ThousandSeparatorFormatter()],
+                            textInputAction: TextInputAction.done,
                             decoration: InputDecoration(
                               labelText: 'Jumlah yang ditarik',
                               hintText: 'Kosongkan untuk tarik semua',

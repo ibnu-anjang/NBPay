@@ -32,6 +32,7 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
   final _svc = FirebaseService();
   final _amountCtrl = TextEditingController();
   final _catatanCtrl = TextEditingController();
+  final _catatanFocus = FocusNode();
   final _fmt = NumberFormat.currency(
     locale: 'id_ID',
     symbol: 'Rp ',
@@ -46,6 +47,7 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
   void dispose() {
     _amountCtrl.dispose();
     _catatanCtrl.dispose();
+    _catatanFocus.dispose();
     super.dispose();
   }
 
@@ -217,6 +219,8 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
                 controller: _amountCtrl,
                 keyboardType: TextInputType.number,
                 inputFormatters: [_ThousandSeparatorFormatter()],
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => _catatanFocus.requestFocus(),
                 decoration: InputDecoration(
                   prefixText: 'Rp ',
                   hintText: 'Minimal Rp. 10.000',
@@ -257,6 +261,8 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
               const SizedBox(height: 8),
               TextField(
                 controller: _catatanCtrl,
+                focusNode: _catatanFocus,
+                textInputAction: TextInputAction.done,
                 decoration: InputDecoration(
                   hintText: 'Contoh: sudah transfer jam 10:30',
                   filled: true,

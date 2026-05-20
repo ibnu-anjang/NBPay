@@ -34,6 +34,7 @@ class _KasirScreenState extends State<KasirScreen> {
   final _amountCtrl = TextEditingController();
   final _menuNameCtrl = TextEditingController();
   final _menuPriceCtrl = TextEditingController();
+  final _menuPriceFocus = FocusNode();
   final _fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
   final _svc = FirebaseService();
 
@@ -76,6 +77,7 @@ class _KasirScreenState extends State<KasirScreen> {
   void dispose() {
     _machinesSub?.cancel();
     _qaSub?.cancel();
+    _menuPriceFocus.dispose();
     super.dispose();
   }
 
@@ -155,6 +157,13 @@ class _KasirScreenState extends State<KasirScreen> {
                                 autofocus: true,
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [_ThousandSeparatorFormatter()],
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) {
+                                  final v = int.tryParse(editCtrl.text.replaceAll('.', '').replaceAll(',', ''));
+                                  if (v != null && v > 0) {
+                                    setDialogState(() { tempAmounts[e.key] = v; tempAmounts.sort(); editingIndex = null; });
+                                  }
+                                },
                                 decoration: InputDecoration(
                                   isDense: true, filled: true, fillColor: AppTheme.bgColor,
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
@@ -206,6 +215,8 @@ class _KasirScreenState extends State<KasirScreen> {
                           controller: newItemCtrl,
                           keyboardType: TextInputType.number,
                           inputFormatters: [_ThousandSeparatorFormatter()],
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => addFromField(),
                           decoration: InputDecoration(
                             hintText: 'Tambah nominal baru',
                             prefixText: 'Rp ',
@@ -345,6 +356,7 @@ class _KasirScreenState extends State<KasirScreen> {
                   controller: _amountCtrl,
                   keyboardType: TextInputType.number,
                   inputFormatters: [_ThousandSeparatorFormatter()],
+                  textInputAction: TextInputAction.done,
                   onChanged: (v) {
                     final digits = v.replaceAll('.', '').replaceAll(',', '');
                     setState(() => _hasValidAmount = digits.isNotEmpty && (double.tryParse(digits) ?? 0) > 0);
@@ -389,6 +401,8 @@ class _KasirScreenState extends State<KasirScreen> {
                       flex: 2,
                       child: TextField(
                         controller: _menuNameCtrl,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _menuPriceFocus.requestFocus(),
                         decoration: InputDecoration(
                           hintText: 'Nama menu',
                           filled: true,
@@ -401,8 +415,11 @@ class _KasirScreenState extends State<KasirScreen> {
                     Expanded(
                       child: TextField(
                         controller: _menuPriceCtrl,
+                        focusNode: _menuPriceFocus,
                         keyboardType: TextInputType.number,
                         inputFormatters: [_ThousandSeparatorFormatter()],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _addMenuItem(),
                         decoration: InputDecoration(
                           hintText: 'Harga',
                           prefixText: 'Rp ',

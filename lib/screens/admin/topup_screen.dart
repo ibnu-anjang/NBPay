@@ -198,6 +198,13 @@ class _TopUpScreenState extends State<TopUpScreen> {
                                 autofocus: true,
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [_ThousandSeparatorFormatter()],
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) {
+                                  final v = int.tryParse(editCtrl.text.replaceAll('.', '').replaceAll(',', ''));
+                                  if (v != null && v > 0) {
+                                    setDialogState(() { tempAmounts[e.key] = v; tempAmounts.sort(); editingIndex = null; });
+                                  }
+                                },
                                 decoration: InputDecoration(
                                   isDense: true, filled: true, fillColor: AppTheme.bgColor,
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
@@ -249,6 +256,8 @@ class _TopUpScreenState extends State<TopUpScreen> {
                           controller: newItemCtrl,
                           keyboardType: TextInputType.number,
                           inputFormatters: [_ThousandSeparatorFormatter()],
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => addFromField(),
                           decoration: InputDecoration(
                             hintText: 'Tambah nominal baru',
                             prefixText: 'Rp ',
@@ -292,7 +301,7 @@ class _TopUpScreenState extends State<TopUpScreen> {
       appBar: AppBar(title: const Text('Top-up Saldo')),
       body: _loadingData
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
+          : SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,6 +401,7 @@ class _TopUpScreenState extends State<TopUpScreen> {
               controller: _amountCtrl,
               keyboardType: TextInputType.number,
               inputFormatters: [_ThousandSeparatorFormatter()],
+              textInputAction: TextInputAction.done,
               decoration: InputDecoration(
                 prefixText: 'Rp ',
                 filled: true,

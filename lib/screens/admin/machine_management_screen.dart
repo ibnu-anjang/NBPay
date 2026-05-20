@@ -55,7 +55,7 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _Field(controller: idCtrl, label: 'ID Mesin (unik, contoh: kantin_01)'),
+              _Field(controller: idCtrl, label: 'ID Mesin (unik, contoh: kantin_01)', action: TextInputAction.next),
               const SizedBox(height: 12),
               _Field(controller: namaCtrl, label: 'Nama Mesin'),
               const SizedBox(height: 12),
@@ -336,12 +336,14 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
 class _Field extends StatelessWidget {
   final TextEditingController controller;
   final String label;
-  const _Field({required this.controller, required this.label});
+  final TextInputAction? action;
+  const _Field({required this.controller, required this.label, this.action});
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      textInputAction: action ?? TextInputAction.done,
       decoration: InputDecoration(
         labelText: label,
         filled: true,

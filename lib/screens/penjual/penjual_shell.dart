@@ -516,6 +516,7 @@ class _KasirTabState extends State<_KasirTab> {
                 controller: _amountCtrl,
                 keyboardType: TextInputType.number,
                 inputFormatters: [_ThousandSeparatorFormatter()],
+                textInputAction: TextInputAction.done,
                 onChanged: (v) {
                   final digits = v.replaceAll('.', '').replaceAll(',', '');
                   setState(() => _hasValidAmount = digits.isNotEmpty && (double.tryParse(digits) ?? 0) > 0);
@@ -731,6 +732,7 @@ class _MenuTab extends StatelessWidget {
               children: [
                 TextField(
                   controller: namaCtrl,
+                  textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
                     labelText: 'Nama Menu',
                     filled: true,
@@ -743,6 +745,7 @@ class _MenuTab extends StatelessWidget {
                   controller: hargaCtrl,
                   keyboardType: TextInputType.number,
                   inputFormatters: [_ThousandSeparatorFormatter()],
+                  textInputAction: TextInputAction.done,
                   decoration: InputDecoration(
                     labelText: 'Harga',
                     prefixText: 'Rp ',

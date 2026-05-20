@@ -12,10 +12,19 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _usernameCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  final _passFocus = FocusNode();
   final _svc = FirebaseService();
   bool _loading = false;
   bool _obscurePass = true;
   String? _error;
+
+  @override
+  void dispose() {
+    _usernameCtrl.dispose();
+    _passCtrl.dispose();
+    _passFocus.dispose();
+    super.dispose();
+  }
 
   Future<void> _login() async {
     setState(() { _loading = true; _error = null; });
@@ -32,9 +41,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(28),
-          child: Column(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top - 56),
+            child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -42,11 +53,13 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 4),
               const Text('NBPay', style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold)),
               const SizedBox(height: 40),
-              _Field(controller: _usernameCtrl, label: 'Username'),
+              _Field(controller: _usernameCtrl, label: 'Username', onSubmitted: (_) => _passFocus.requestFocus()),
               const SizedBox(height: 16),
               TextField(
                 controller: _passCtrl,
+                focusNode: _passFocus,
                 obscureText: _obscurePass,
+                textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _loading ? null : _login(),
                 decoration: InputDecoration(
                   labelText: 'Password',
@@ -78,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     : const Text('Masuk'),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -88,12 +102,15 @@ class _LoginScreenState extends State<LoginScreen> {
 class _Field extends StatelessWidget {
   final TextEditingController controller;
   final String label;
-  const _Field({required this.controller, required this.label});
+  final ValueChanged<String>? onSubmitted;
+  const _Field({required this.controller, required this.label, this.onSubmitted});
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      textInputAction: onSubmitted != null ? TextInputAction.next : TextInputAction.done,
+      onSubmitted: onSubmitted,
       decoration: InputDecoration(
         labelText: label,
         filled: true,

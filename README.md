@@ -1,86 +1,63 @@
-1. PRD (Product Requirements Document)
-Dokumen ini menjelaskan apa yang dibangun dan mengapa.
+# NBPay — SmartSchool Cashless Ecosystem
 
-Nama Proyek: SmartSchool Cashless Ecosystem (E-Money Prototype)
-Tujuan: Mengganti transaksi tunai di sekolah dengan kartu RFID/NFC guna pencatatan keuangan yang transparan.
+> Sistem pembayaran cashless berbasis RFID/NFC untuk lingkungan sekolah, dibangun dengan Flutter + Firebase + ESP32.
 
-Fitur Utama:
-Aplikasi Siswa (Mobile): Login, Cek Saldo Real-time, Riwayat Transaksi.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Aplikasi Admin/Kantin (Web/Tablet):
+## Tentang Proyek
 
-Kasir: Input nominal belanja dan perintah "Tap" ke ESP32.
+NBPay mengganti transaksi tunai di sekolah dengan kartu RFID/NFC untuk pencatatan keuangan yang transparan dan real-time.
 
-Top-up: Menambah saldo siswa setelah bayar tunai.
+**Aktor:**
+- **Siswa** — Cek saldo & riwayat transaksi via mobile app
+- **Kasir/Admin** — Input transaksi, top-up saldo, manajemen kartu & pengguna
+- **Penjual** — Terima pembayaran & kelola withdrawal
 
-User Management: Daftar kartu baru (Link UID kartu ke nama siswa).
+## Arsitektur
 
-Integrasi Hardware: ESP32 sebagai reader yang terhubung ke Firebase via WiFi.
+```
+Flutter App (Mobile/Web/Tablet)
+        │
+        ▼
+   Firebase (Firestore + Auth)
+        │
+        ▼
+   ESP32 + RFID Reader (RC522/PN532)
+```
 
-Kebutuhan Non-Fungsional:
-Real-time: Perubahan saldo harus terlihat di HP siswa dalam < 2 detik setelah tap.
+**Stack:** Flutter · Firebase Firestore · Firebase Auth · ESP32 · RFID/NFC
 
-Keamanan: Logika pengurangan saldo dilakukan di sisi server/app admin, bukan di kartu.
+## Alur Pembayaran
 
-2. ERD (Entity Relationship Diagram)
-Ini adalah rancangan struktur data di Firebase Firestore. Karena Firestore adalah NoSQL, kita akan memodelkannya dalam bentuk koleksi.
+1. Admin set `machine_commands/{id}` → `status: waiting_tap`
+2. ESP32 mendeteksi perubahan via Firebase Stream
+3. Siswa tap kartu → ESP32 kirim UID ke Firebase
+4. Server validasi saldo → update `users`, `transactions`, `machine_commands`
+5. Admin menerima konfirmasi `status: success` + nota digital
 
-Koleksi: users (Siswa & Admin)
-uid_kartu (String, PK): ID unik dari RFID.
+## Struktur Data (Firestore)
 
-nama (String)
+| Koleksi | Field Utama |
+|---|---|
+| `users` | uid_kartu, nama, role, saldo, nis |
+| `transactions` | uid_kartu, nominal, tipe, timestamp, keterangan |
+| `machine_commands` | machine_id, status, amount |
 
-role (String): "siswa" / "admin"
+## Requirements
 
-saldo (Number)
+- Flutter SDK >= 3.x
+- Firebase project dengan Firestore & Authentication aktif
+- ESP32 + RFID Reader (untuk integrasi hardware)
 
-nis (String)
+## Setup
 
-Koleksi: transactions (Log)
-transaction_id (String, PK)
+```bash
+flutter pub get
+# Tambahkan google-services.json (Android) ke android/app/
+# Tambahkan GoogleService-Info.plist (iOS) ke ios/Runner/
+flutter run
+```
 
-uid_kartu (String, FK)
+## License
 
-nominal (Number)
-
-tipe (String): "debit" (jajan) / "credit" (topup)
-
-timestamp (Timestamp)
-
-keterangan (String)
-
-Koleksi: machine_commands (Jembatan ESP32)
-machine_id (String, PK)
-
-status (String): "idle" / "waiting_tap" / "success" / "error"
-
-amount (Number)
-
-3. TRD (Technical Requirements Document)
-Ini menjelaskan bagaimana teknologi tersebut bekerja sama.
-
-Stack Teknologi:
-Frontend: Flutter (Mobile untuk Siswa, Web/Tablet untuk Admin).
-
-Backend: Firebase (Firestore sebagai database, Auth untuk login).
-
-Hardware: ESP32 + RFID Reader (RC522/PN532).
-
-Protokol Komunikasi: Firebase Stream (Listen) — ESP32 akan selalu subscribe ke dokumen di machine_commands.
-
-Alur Teknis Pembayaran:
-Aplikasi Admin mengubah dokumen machine_commands/kantin_01 menjadi status waiting_tap.
-
-ESP32 mendeteksi perubahan status tersebut via WiFi.
-
-Siswa menempelkan kartu. ESP32 membaca UID dan mengirimnya ke Firebase.
-
-Firebase/Logic memvalidasi saldo. Jika cukup:
-
-Update saldo di koleksi users.
-
-Tambah dokumen di koleksi transactions.
-
-Update status machine_commands menjadi success.
-
-Aplikasi Admin menangkap status success dan menampilkan nota digital.
+Copyright (c) 2026 **Ibnu Maulidi** — [MIT License](LICENSE)
