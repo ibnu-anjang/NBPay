@@ -58,6 +58,12 @@ flutter pub get
 flutter run
 ```
 
+## Tools
+
+| File | Fungsi |
+|---|---|
+| `tools/machine_simulator.py` | Simulator ESP32 untuk testing tanpa hardware fisik |
+
 ## Dokumentasi
 
 | File | Isi |
