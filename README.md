@@ -58,6 +58,16 @@ flutter pub get
 flutter run
 ```
 
+## Struktur Repo
+
+```
+NBPay/
+├── lib/          ← Flutter app (software)
+├── hardware/     ← Firmware ESP32 (hardware)
+├── docs/         ← Dokumentasi teknis
+└── tools/        ← Dev tools (simulator)
+```
+
 ## Tools
 
 | File | Fungsi |
