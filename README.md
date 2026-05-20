@@ -58,6 +58,14 @@ flutter pub get
 flutter run
 ```
 
+## Dokumentasi
+
+| File | Isi |
+|---|---|
+| [docs/hardware.md](docs/hardware.md) | Setup ESP32, wiring RFID, firmware |
+| [docs/system-requirements.md](docs/system-requirements.md) | Kebutuhan sistem & dependensi |
+| [docs/testing.md](docs/testing.md) | Panduan testing manual & skenario uji |
+
 ## License
 
 Copyright (c) 2026 **Ibnu Maulidi** — [MIT License](LICENSE)
