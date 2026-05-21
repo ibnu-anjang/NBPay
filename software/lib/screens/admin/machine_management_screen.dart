@@ -306,6 +306,15 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
                       child: Text(statusLabel, style: TextStyle(color: statusColor, fontSize: 11)),
                     ),
                     const SizedBox(width: 4),
+                    if (status != 'idle')
+                      IconButton(
+                        icon: const Icon(Icons.refresh, color: Colors.white54, size: 20),
+                        tooltip: 'Reset ke idle',
+                        onPressed: () => _svc.resetMachine(id),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    const SizedBox(width: 4),
                     IconButton(
                       icon: const Icon(Icons.edit_outlined, color: Colors.white54, size: 20),
                       onPressed: () => _showEditTujuanDialog(id, tujuan),

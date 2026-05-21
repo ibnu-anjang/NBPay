@@ -62,6 +62,10 @@ class _KasirScreenState extends State<KasirScreen> {
       setState(() {
         _machines = filtered;
         _loadingMachines = false;
+        final ids = filtered.map((m) => m['id'] as String).toSet();
+        if (_selectedMachineId != null && !ids.contains(_selectedMachineId)) {
+          _selectedMachineId = null;
+        }
         if (filtered.isNotEmpty && _selectedMachineId == null) {
           _selectedMachineId = filtered.first['id'] as String;
           context.read<PaymentProvider>().setMachine(_selectedMachineId!);
