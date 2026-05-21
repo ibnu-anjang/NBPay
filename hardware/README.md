@@ -7,6 +7,9 @@ Folder ini berisi kode firmware untuk ESP32 yang terintegrasi dengan sistem NBPa
 ```
 hardware/
 ├── esp32_rfid/        ← Kode utama ESP32 + RFID reader
+├── tools/
+│   └── machine_simulator.py  ← Simulator mesin untuk testing
+├── hardware.md        ← Dokumentasi wiring & konfigurasi
 └── README.md
 ```
 
@@ -25,4 +28,4 @@ hardware/
 
 ## Koneksi ke Firebase
 
-Firmware ini berkomunikasi dengan Firestore via WiFi. Lihat [docs/hardware.md](../docs/hardware.md) untuk detail wiring dan konfigurasi.
+Firmware ini berkomunikasi dengan Firestore via WiFi. Lihat [hardware.md](./hardware.md) untuk detail wiring dan konfigurasi.
