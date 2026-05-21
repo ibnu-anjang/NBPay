@@ -8,7 +8,7 @@ Simpan: users (penjual, admin), machine_commands, settings, menus
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-SERVICE_ACCOUNT = "/home/iben/NBPay/nbpay-55455-firebase-adminsdk-fbsvc-196ab6c4fb.json"
+SERVICE_ACCOUNT = "/home/iben/NBPay/software/nbpay-55455-firebase-adminsdk-fbsvc-196ab6c4fb.json"
 
 cred = credentials.Certificate(SERVICE_ACCOUNT)
 firebase_admin.initialize_app(cred)
