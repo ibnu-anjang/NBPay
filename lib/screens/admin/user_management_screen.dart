@@ -40,11 +40,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     _load();
     _machinesSub = _svc.streamAllMachines().listen((machines) {
       if (!mounted) return;
-      final filtered = machines.where((m) {
-        final t = m['tujuan'] as String? ?? '';
-        return t == 'topup_daftar' || t == 'topup' || t == 'daftar_siswa';
-      }).toList();
-      setState(() => _machines = filtered);
+      setState(() => _machines = machines);
     });
   }
 
@@ -113,7 +109,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_machines.length > 1) ...[
+                  if (_machines.isNotEmpty) ...[
                     DropdownButtonFormField<String>(
                       initialValue: selectedMachineId,
                       items: _machines.map((m) {
@@ -412,7 +408,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       ),
     );
     if (ok == true) {
-      await _svc.deleteUser(s.authUid ?? s.uidKartu!);
+      await _svc.deleteUser(s.uidKartu ?? s.authUid!);
       _load();
     }
   }

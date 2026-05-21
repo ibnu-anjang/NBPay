@@ -40,11 +40,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
     _load();
     _machinesSub = _svc.streamAllMachines().listen((machines) {
       if (!mounted) return;
-      final filtered = machines.where((m) {
-        final t = m['tujuan'] as String? ?? '';
-        return t == 'kasir' || t == '';
-      }).toList();
-      setState(() => _machines = filtered);
+      setState(() => _machines = machines);
     });
   }
 
@@ -127,7 +123,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                     onToggle: () => setDialogState(() => obscurePass = !obscurePass),
                   ),
                   const SizedBox(height: 12),
-                  if (_machines.length > 1) ...[
+                  if (_machines.isNotEmpty) ...[
                     DropdownButtonFormField<String>(
                       initialValue: selectedMachineId,
                       items: _machines.map((m) {
@@ -286,7 +282,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                 children: [
                   _DialogField(controller: namaCtrl, label: 'Nama Penjual', action: TextInputAction.next),
                   const SizedBox(height: 12),
-                  if (_machines.length > 1) ...[
+                  if (_machines.isNotEmpty) ...[
                     DropdownButtonFormField<String>(
                       initialValue: selectedMachineId,
                       items: _machines.map((m) {
