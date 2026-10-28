@@ -1,0 +1,6 @@
+{
+    "clangd.arguments": [
+        "--query-driver=/home/LGRAM-LINUX/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-g*"
+    ],
+    "C_Cpp.intelliSenseEngine": "Tag Parser"
+}
