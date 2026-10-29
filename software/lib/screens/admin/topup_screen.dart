@@ -42,7 +42,7 @@ class _TopUpScreenState extends State<TopUpScreen> {
 
   List<Map<String, dynamic>> _machines = [];
   String? _selectedMachineId;
-  List<int> _quickAmounts = [10000, 20000, 50000, 100000];
+  List<int> _quickAmounts = [10000, 20000, 30000, 50000, 75000, 100000, 150000, 200000, 500000];
   StreamSubscription<List<int>>? _qaSub;
   StreamSubscription<List<Map<String, dynamic>>>? _machinesSub;
 
@@ -104,6 +104,11 @@ class _TopUpScreenState extends State<TopUpScreen> {
       return;
     }
     final machineId = _selectedMachineId ?? _machines.first['id'] as String;
+    final selectedM = _machines.firstWhere((m) => m['id'] == machineId, orElse: () => _machines.first);
+    if (isMachineOffline(selectedM['last_heartbeat'])) {
+      setState(() => _message = 'Mesin top-up "${selectedM['nama'] ?? machineId}" sedang offline. Nyalakan hardware ESP32 terlebih dahulu.');
+      return;
+    }
     await _svc.setMachineWaitingUid(machineId);
     setState(() { _scanningCard = true; _message = null; });
 
@@ -297,7 +302,10 @@ class _TopUpScreenState extends State<TopUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+            final selectedM = _machines.firstWhere((m) => m['id'] == _selectedMachineId, orElse: () => _machines.firstOrNull ?? {});
+            final isOffline = _machines.isEmpty || isMachineOffline(selectedM['last_heartbeat']);
+
+            return Scaffold(
       appBar: AppBar(title: const Text('Top-up Saldo')),
       body: _loadingData
           ? const Center(child: CircularProgressIndicator())
@@ -313,18 +321,28 @@ class _TopUpScreenState extends State<TopUpScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      initialValue: _selectedMachineId,
+                      key: ValueKey(_selectedMachineId),
+                      initialValue: _machines.any((m) => m['id'] == _selectedMachineId) ? _selectedMachineId : null,
+                      isExpanded: true,
                       items: _machines.map((m) {
                         final s = machineStatusStyle(m);
                         return DropdownMenuItem<String>(
                           value: m['id'] as String,
-                          child: Row(children: [
-                            Icon(Icons.circle, size: 8, color: s.color),
-                            const SizedBox(width: 8),
-                            Text(m['nama'] as String? ?? m['id'] as String),
-                            const SizedBox(width: 4),
-                            Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
-                          ]),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.circle, size: 8, color: s.color),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  m['nama'] as String? ?? m['id'] as String,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
+                            ],
+                          ),
                         );
                       }).toList(),
                       onChanged: _scanningCard ? null : (v) => setState(() => _selectedMachineId = v),
@@ -352,9 +370,9 @@ class _TopUpScreenState extends State<TopUpScreen> {
                   )
                 else
                   TextButton.icon(
-                    onPressed: _machines.isEmpty ? null : _scanCard,
-                    icon: const Icon(Icons.nfc, size: 16),
-                    label: const Text('Scan Kartu'),
+                    onPressed: (_machines.isEmpty || isOffline) ? null : _scanCard,
+                    icon: Icon(isOffline ? Icons.block_rounded : Icons.nfc, size: 16),
+                    label: Text(isOffline ? 'Mesin Offline' : 'Scan Kartu'),
                   ),
               ],
             ),
@@ -380,10 +398,12 @@ class _TopUpScreenState extends State<TopUpScreen> {
             ] else ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<UserModel>(
-                initialValue: _selected,
+                key: ValueKey(_selected?.uidKartu),
+                initialValue: _students.any((s) => s.uidKartu == _selected?.uidKartu) ? _selected : null,
+                isExpanded: true,
                 items: _students.map((s) => DropdownMenuItem(
                   value: s,
-                  child: Text('${s.nama} — ${_fmt.format(s.saldo)}'),
+                  child: Text('${s.nama} — ${_fmt.format(s.saldo)}', overflow: TextOverflow.ellipsis),
                 )).toList(),
                 onChanged: (v) => setState(() => _selected = v),
                 decoration: InputDecoration(
@@ -414,26 +434,22 @@ class _TopUpScreenState extends State<TopUpScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: _quickAmounts.map((a) => ActionChip(
-                      label: Text(_fmt.format(a)),
-                      onPressed: () => setState(() => _amountCtrl.text = NumberFormat('#,###', 'id_ID').format(a)),
-                      backgroundColor: AppTheme.cardColor,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    )).toList(),
-                  ),
+            HorizontalScrollChips(
+              trailing: IconButton(
+                icon: const Icon(Icons.tune_rounded, color: Colors.white60, size: 20),
+                tooltip: 'Atur nominal cepat',
+                onPressed: _showQuickAmountEditor,
+              ),
+              children: _quickAmounts.map((a) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ActionChip(
+                  label: Text(_fmt.format(a), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  onPressed: () => setState(() => _amountCtrl.text = NumberFormat('#,###', 'id_ID').format(a)),
+                  backgroundColor: AppTheme.cardColor,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, color: Colors.white54),
-                  tooltip: 'Atur nominal cepat',
-                  onPressed: _showQuickAmountEditor,
-                ),
-              ],
+              )).toList(),
             ),
             if (_message != null) ...[
               const SizedBox(height: 16),

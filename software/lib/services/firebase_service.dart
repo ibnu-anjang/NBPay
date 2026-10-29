@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -224,10 +225,12 @@ class FirebaseService {
 
   // Action: Process Transaction (This logic should ideally be a Cloud Function for security, 
   // but for the prototype we do it in-app as per TRD)
-  Future<bool> processPayment(String uidKartu, double amount, String machineId) async {
+  Future<bool> processPayment(String uidKartu, double amount, String machineId, {String? receiverAuthUid}) async {
     try {
       final userRef = _db.collection('users').doc(_normalizeUid(uidKartu));
       final machineRef = _db.collection('machine_commands').doc(machineId);
+      final adminUid = receiverAuthUid ?? _auth.currentUser?.uid;
+      final adminRef = adminUid != null ? _db.collection('users').doc(adminUid) : null;
 
       return await _db.runTransaction((transaction) async {
         // Guard: cek status mesin dulu — kalau tab lain sudah proses, abort
@@ -236,13 +239,34 @@ class FirebaseService {
         if (machineStatus != 'waiting_tap') throw Exception('already_processed');
 
         final userSnap = await transaction.get(userRef);
-        if (!userSnap.exists) throw Exception("User not found");
+        if (!userSnap.exists) throw Exception("User tidak ditemukan");
 
         final userData = userSnap.data()!;
+        if (userData['is_frozen'] == true) {
+          throw Exception('Kartu sedang DIBEKUKAN oleh pemiliknya');
+        }
         final currentSaldo = (userData['saldo'] ?? 0).toDouble();
         if (currentSaldo < amount) throw Exception("Saldo tidak cukup");
 
         transaction.update(userRef, {'saldo': currentSaldo - amount});
+
+        // Credit receiver (Admin / Kas Sekolah) agar pembukuan seimbang (tidak ada black hole)
+        if (adminRef != null) {
+          final adminSnap = await transaction.get(adminRef);
+          if (adminSnap.exists) {
+            final adminSaldo = (adminSnap.data()?['saldo'] ?? 0).toDouble();
+            transaction.update(adminRef, {'saldo': adminSaldo + amount});
+            final adminTxRef = _db.collection('transactions').doc();
+            transaction.set(adminTxRef, {
+              'uid_kartu': adminUid,
+              'nominal': amount,
+              'tipe': 'credit',
+              'timestamp': FieldValue.serverTimestamp(),
+              'keterangan': 'Penerimaan Kasir Kas Sekolah',
+              'buyer_uid': uidKartu,
+            });
+          }
+        }
 
         final transRef = _db.collection('transactions').doc();
         transaction.set(transRef, {
@@ -250,7 +274,8 @@ class FirebaseService {
           'nominal': amount,
           'tipe': 'debit',
           'timestamp': FieldValue.serverTimestamp(),
-          'keterangan': 'Pembayaran Kantin',
+          'keterangan': 'Pembayaran Kasir Sekolah',
+          'penjual_uid': ?adminUid,
         });
 
         transaction.set(machineRef, {'status': 'success'}, SetOptions(merge: true));
@@ -306,7 +331,7 @@ class FirebaseService {
 
   /// Update uid_kartu for penjual (stored by authUid doc).
   Future<void> updatePenjualCard(String authUid, String uidKartu) async {
-    await _db.collection('users').doc(authUid).update({'uid_kartu': uidKartu});
+    await _db.collection('users').doc(authUid).update({'uid_kartu': _normalizeUid(uidKartu)});
   }
 
   /// Admin manually sets a user's saldo.
@@ -378,8 +403,10 @@ class FirebaseService {
     await _db.collection('menus').add(item.toMap());
   }
 
-  Future<void> updateMenu(String menuId, String nama, double harga) async {
-    await _db.collection('menus').doc(menuId).update({'nama': nama, 'harga': harga});
+  Future<void> updateMenu(String menuId, String nama, double harga, {String? imageUrl}) async {
+    final Map<String, dynamic> data = {'nama': nama, 'harga': harga};
+    if (imageUrl != null) data['image_url'] = imageUrl;
+    await _db.collection('menus').doc(menuId).update(data);
   }
 
   Future<void> deleteMenu(String menuId) async {
@@ -411,6 +438,11 @@ class FirebaseService {
 
         if (!buyerSnap.exists) throw Exception('Pembeli tidak ditemukan');
         if (!penjualSnap.exists) throw Exception('Penjual tidak ditemukan');
+
+        final buyerData = buyerSnap.data()!;
+        if (buyerData['is_frozen'] == true) {
+          throw Exception('Kartu pembeli sedang DIBEKUKAN / DINONAKTIFKAN');
+        }
 
         final buyerSaldo = (buyerSnap.data()!['saldo'] ?? 0).toDouble();
         if (buyerSaldo < totalAmount) throw Exception('Saldo tidak cukup');
@@ -451,6 +483,47 @@ class FirebaseService {
       }, SetOptions(merge: true));
       return false;
     }
+  }
+
+  /// Siswa / Admin mengaktifkan atau membekukan kartu RFID
+  Future<void> toggleFreezeCard(String uidKartu, bool freeze) async {
+    final uid = _normalizeUid(uidKartu);
+    await _db.collection('users').doc(uid).update({'is_frozen': freeze});
+  }
+
+  /// Penjual mengajukan penarikan / pencairan saldo hasil penjualan ke rekening bank
+  Future<void> requestWithdrawal({
+    required String penjualAuthUid,
+    required double amount,
+    required String bankName,
+    required String accountNumber,
+    required String accountName,
+    String? catatan,
+  }) async {
+    final penjualRef = _db.collection('users').doc(penjualAuthUid);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(penjualRef);
+      if (!snap.exists) throw Exception('Akun penjual tidak ditemukan');
+      final saldo = (snap.data()?['saldo'] ?? 0).toDouble();
+      if (saldo < amount) throw Exception('Saldo aktif tidak mencukupi untuk penarikan sebesar ini');
+
+      // Potong saldo aktif seketika agar tidak terjadi double-withdrawal
+      tx.update(penjualRef, {'saldo': saldo - amount});
+
+      final txRef = _db.collection('transactions').doc();
+      tx.set(txRef, {
+        'uid_kartu': penjualAuthUid,
+        'nominal': amount,
+        'tipe': 'withdrawal',
+        'status': 'pending',
+        'timestamp': FieldValue.serverTimestamp(),
+        'bank_name': bankName,
+        'account_number': accountNumber,
+        'account_name': accountName,
+        'catatan': catatan,
+        'keterangan': 'Pencairan Dana ke $bankName ($accountNumber)',
+      });
+    });
   }
 
   Stream<List<TransactionModel>> streamWithdrawalTransactions() {
@@ -540,8 +613,27 @@ class FirebaseService {
   Future<void> processCekSaldo(String machineId, String uidKartu) async {
     try {
       final uid = _normalizeUid(uidKartu);
-      final userRef = _db.collection('users').doc(uid);
       final machineRef = _db.collection('machine_commands').doc(machineId);
+
+      // Siswa: doc ID = uid_kartu. Penjual: doc ID = authUid, uid_kartu disimpan di field.
+      // Coba keduanya di luar transaction (query tidak bisa dalam transaction).
+      DocumentReference userRef;
+      Map<String, dynamic> userData;
+
+      final directSnap = await _db.collection('users').doc(uid).get();
+      if (directSnap.exists) {
+        userRef = directSnap.reference;
+        userData = directSnap.data()!;
+      } else {
+        final querySnap = await _db
+            .collection('users')
+            .where('uid_kartu', isEqualTo: uid)
+            .limit(1)
+            .get();
+        if (querySnap.docs.isEmpty) throw Exception('Kartu tidak dikenal');
+        userRef = querySnap.docs.first.reference;
+        userData = querySnap.docs.first.data();
+      }
 
       await _db.runTransaction((tx) async {
         // Guard: cek status sebelum proses — hindari concurrent taps
@@ -549,14 +641,17 @@ class FirebaseService {
         final machineStatus = machineSnap.data()?['status'] as String?;
         if (machineStatus != 'waiting_check') throw Exception('already_processed');
 
-        final userSnap = await tx.get(userRef);
-        if (!userSnap.exists) throw Exception('Kartu tidak dikenal');
+        // Re-read saldo dalam transaction agar nilainya fresh
+        final freshSnap = await tx.get(userRef);
+        final freshData = freshSnap.data() as Map<String, dynamic>?;
+        final saldo = freshData != null
+            ? (freshData['saldo'] ?? 0).toDouble()
+            : (userData['saldo'] ?? 0).toDouble();
 
-        final userData = userSnap.data()!;
         tx.set(machineRef, {
           'status': 'showing_saldo',
-          'saldo_result': (userData['saldo'] ?? 0).toDouble(),
-          'nama_result': userData['nama'] ?? 'Siswa',
+          'saldo_result': saldo,
+          'nama_result': userData['nama'] ?? 'Pengguna',
           'last_uid': FieldValue.delete(),
         }, SetOptions(merge: true));
       });
@@ -582,7 +677,7 @@ class FirebaseService {
     }, SetOptions(merge: true));
   }
 
-  // Payment info (QRIS / rekening) — disimpan di Firestore agar admin bisa edit
+  // Payment info (QRIS / rekening / status toggle) — disimpan di Firestore agar admin bisa edit
   Stream<Map<String, String>> streamPaymentInfo() {
     return _async(_db.collection('settings').doc('payment_info').snapshots().map((snap) {
       final d = snap.data() ?? {};
@@ -591,6 +686,8 @@ class FirebaseService {
         'account_number': d['account_number'] ?? '',
         'account_name': d['account_name'] ?? '',
         'qris_image_url': d['qris_image_url'] ?? '',
+        'qris_enabled': d['qris_enabled']?.toString() ?? 'true',
+        'bank_enabled': d['bank_enabled']?.toString() ?? 'true',
       };
     }));
   }
@@ -600,12 +697,16 @@ class FirebaseService {
     required String accountNumber,
     required String accountName,
     required String qrisImageUrl,
+    bool qrisEnabled = true,
+    bool bankEnabled = true,
   }) async {
     await _db.collection('settings').doc('payment_info').set({
       'bank_name': bankName,
       'account_number': accountNumber,
       'account_name': accountName,
       'qris_image_url': qrisImageUrl,
+      'qris_enabled': qrisEnabled,
+      'bank_enabled': bankEnabled,
     }, SetOptions(merge: true));
   }
 
@@ -615,6 +716,7 @@ class FirebaseService {
     required String namaSiswa,
     required double amount,
     required String method,
+    int? kodeUnik,
     String? catatan,
   }) async {
     // Prevent accumulation: block if the student already has a pending request.
@@ -628,10 +730,17 @@ class FirebaseService {
       throw Exception(
           'Kamu masih memiliki request yang belum diproses. Tunggu hingga disetujui atau ditolak sebelum mengajukan request baru.');
     }
+
+    // Kode unik 3 digit (100-999) otomatis jika metode non-cash
+    final code = kodeUnik ?? (method != 'cash' ? (100 + Random().nextInt(900)) : null);
+    final totalBayar = amount + (code ?? 0);
+
     await _db.collection('topup_requests').add({
       'uid_kartu': uidKartu,
       'nama_siswa': namaSiswa,
       'amount': amount,
+      'kode_unik': code,
+      'total_bayar': totalBayar,
       'method': method,
       'status': 'pending',
       'catatan': catatan,
@@ -682,14 +791,21 @@ class FirebaseService {
       final userSnap = await tx.get(userRef);
       if (!userSnap.exists) throw Exception('User not found');
       final currentSaldo = (userSnap.data()!['saldo'] ?? 0).toDouble();
-      tx.update(userRef, {'saldo': currentSaldo + req.amount});
+
+      // Siswa mendapatkan 100% dari total yang ditransfer (pokok + kode unik)
+      final totalCredit = req.totalBayar;
+      tx.update(userRef, {'saldo': currentSaldo + totalCredit});
+
       final transRef = _db.collection('transactions').doc();
+      final ket = req.kodeUnik != null
+          ? 'Top-up Saldo (Kode Unik: ${req.kodeUnik})'
+          : 'Top-up Saldo';
       tx.set(transRef, {
         'uid_kartu': req.uidKartu,
-        'nominal': req.amount,
+        'nominal': totalCredit,
         'tipe': 'credit',
         'timestamp': FieldValue.serverTimestamp(),
-        'keterangan': 'Top-up Saldo',
+        'keterangan': ket,
       });
       tx.update(reqRef, {'status': 'approved'});
     });

@@ -46,7 +46,7 @@ class _KasirScreenState extends State<KasirScreen> {
   bool _hasValidAmount = false;
   final List<Map<String, dynamic>> _cartItems = [];
 
-  List<int> _quickAmounts = [2000, 3000, 5000, 10000, 15000, 20000];
+  List<int> _quickAmounts = [2000, 3000, 5000, 10000, 15000, 20000, 25000, 50000, 100000];
   StreamSubscription<List<int>>? _qaSub;
   StreamSubscription<List<Map<String, dynamic>>>? _machinesSub;
 
@@ -101,6 +101,21 @@ class _KasirScreenState extends State<KasirScreen> {
   void _removeItem(int index) => setState(() => _cartItems.removeAt(index));
 
   Future<void> _startPayment() async {
+    final selectedMachine = _machines.firstWhere(
+      (m) => m['id'] == _selectedMachineId,
+      orElse: () => _machines.firstOrNull ?? {},
+    );
+    final isOffline = _selectedMachineId == null || _machines.isEmpty || isMachineOffline(selectedMachine['last_heartbeat']);
+    if (isOffline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mesin kasir offline! Nyalakan hardware ESP32 sebelum memulai transaksi.'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    }
+
     double amount;
     if (_inputMode == 'manual') {
       amount = double.tryParse(_amountCtrl.text.replaceAll('.', '').replaceAll(',', '').trim()) ?? 0;
@@ -284,6 +299,7 @@ class _KasirScreenState extends State<KasirScreen> {
       (m) => m['id'] == _selectedMachineId,
       orElse: () => {'nama': _selectedMachineId},
     );
+    final isOffline = _selectedMachineId == null || _machines.isEmpty || isMachineOffline(selectedMachine['last_heartbeat']);
     final machineName = selectedMachine['nama'] as String? ?? _selectedMachineId ?? '';
 
     return Scaffold(
@@ -299,16 +315,24 @@ class _KasirScreenState extends State<KasirScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    initialValue: _selectedMachineId,
+                    key: ValueKey(_selectedMachineId),
+                    initialValue: _machines.any((m) => m['id'] == _selectedMachineId) ? _selectedMachineId : null,
+                    isExpanded: true,
                     items: _machines.map((m) {
                       final s = machineStatusStyle(m);
                       return DropdownMenuItem<String>(
                         value: m['id'] as String,
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.circle, size: 8, color: s.color),
                             const SizedBox(width: 8),
-                            Text(m['nama'] as String? ?? m['id'] as String),
+                            Flexible(
+                              child: Text(
+                                m['nama'] as String? ?? m['id'] as String,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                             const SizedBox(width: 4),
                             Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
                           ],
@@ -377,26 +401,25 @@ class _KasirScreenState extends State<KasirScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: _quickAmounts.map((a) => ActionChip(
-                          label: Text(_fmt.format(a)),
-                          onPressed: () => setState(() { _amountCtrl.text = NumberFormat('#,###', 'id_ID').format(a); _hasValidAmount = true; }),
-                          backgroundColor: AppTheme.cardColor,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        )).toList(),
-                      ),
+                HorizontalScrollChips(
+                  trailing: IconButton(
+                    icon: const Icon(Icons.tune_rounded, color: Colors.white60, size: 20),
+                    tooltip: 'Atur nominal cepat',
+                    onPressed: _showQuickAmountEditor,
+                  ),
+                  children: _quickAmounts.map((a) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ActionChip(
+                      label: Text(_fmt.format(a), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      onPressed: () => setState(() {
+                        _amountCtrl.text = NumberFormat('#,###', 'id_ID').format(a);
+                        _hasValidAmount = true;
+                      }),
+                      backgroundColor: AppTheme.cardColor,
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined, color: Colors.white54),
-                      tooltip: 'Atur nominal cepat',
-                      onPressed: _showQuickAmountEditor,
-                    ),
-                  ],
+                  )).toList(),
                 ),
               ] else ...[
                 Row(
@@ -475,10 +498,37 @@ class _KasirScreenState extends State<KasirScreen> {
                 ],
               ],
               const SizedBox(height: 24),
+              if (isOffline) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.wifi_off_rounded, color: Color(0xFFEF4444), size: 18),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Mesin Kasir Offline. Perintah tap dinonaktifkan demi keamanan transaksi fisik.',
+                          style: TextStyle(color: Color(0xFFFCA5A5), fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               ElevatedButton.icon(
-                onPressed: (_inputMode == 'manual' ? _hasValidAmount : _cartItems.isNotEmpty) ? _startPayment : null,
-                icon: const Icon(Icons.nfc),
-                label: const Text('Perintahkan Tap Kartu'),
+                onPressed: ((_inputMode == 'manual' ? _hasValidAmount : _cartItems.isNotEmpty) && !isOffline && (status == 'idle' || status == 'error')) ? _startPayment : null,
+                icon: Icon(isOffline ? Icons.block_rounded : Icons.nfc),
+                label: Text(isOffline ? 'Mesin Offline (Tap Diblokir)' : 'Perintahkan Tap Kartu'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isOffline ? Colors.white12 : AppTheme.primaryColor,
+                  foregroundColor: isOffline ? Colors.white38 : Colors.white,
+                ),
               ),
             ],
             if (status == 'waiting_tap') ...[
@@ -541,6 +591,8 @@ class _StatusBanner extends StatelessWidget {
       switch (status) {
         case 'waiting_tap':
           color = const Color(0xFFF59E0B); label = 'Menunggu Tap'; icon = Icons.nfc;
+        case 'waiting_process':
+          color = const Color(0xFF0EA5E9); label = 'Memproses'; icon = Icons.hourglass_top_rounded;
         case 'success':
           color = const Color(0xFF22C55E); label = 'Berhasil'; icon = Icons.check_circle;
         case 'error':

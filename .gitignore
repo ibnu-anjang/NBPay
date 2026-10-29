@@ -1,0 +1,10 @@
+Gemini_Generated_Image_*.jpeg
+.firebase/
+software/Gemini_Generated_Image_*.jpeg
+.firebase/
+build/
+software/build/
+.dart_tool/
+*.pyc
+__pycache__/
+*adminsdk*.json

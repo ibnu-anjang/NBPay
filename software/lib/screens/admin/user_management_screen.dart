@@ -9,9 +9,11 @@ import '../../widgets/app_theme.dart';
 class _ThousandSeparatorFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    final digits = newValue.text.replaceAll('.', '');
+    final digits = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
     if (digits.isEmpty) return newValue.copyWith(text: '');
-    final formatted = NumberFormat('#,###', 'id_ID').format(int.parse(digits));
+    final parsed = int.tryParse(digits);
+    if (parsed == null) return oldValue;
+    final formatted = NumberFormat('#,###', 'id_ID').format(parsed);
     return newValue.copyWith(
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
@@ -29,10 +31,24 @@ class UserManagementScreen extends StatefulWidget {
 class _UserManagementScreenState extends State<UserManagementScreen> {
   final _svc = FirebaseService();
   final _fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
   List<UserModel> _students = [];
   List<Map<String, dynamic>> _machines = [];
   bool _loading = true;
   StreamSubscription<List<Map<String, dynamic>>>? _machinesSub;
+
+  List<UserModel> get _filteredStudents {
+    if (_searchQuery.trim().isEmpty) return _students;
+    final q = _searchQuery.trim().toLowerCase();
+    return _students.where((s) {
+      final matchName = s.nama.toLowerCase().contains(q);
+      final matchNis = s.nis.toLowerCase().contains(q);
+      final matchUser = (s.username ?? '').toLowerCase().contains(q);
+      final matchCard = (s.uidKartu ?? '').toLowerCase().contains(q);
+      return matchName || matchNis || matchUser || matchCard;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -46,6 +62,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
 
   @override
   void dispose() {
+    _searchCtrl.dispose();
     _machinesSub?.cancel();
     super.dispose();
   }
@@ -82,6 +99,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               return;
             }
             final machineId = selectedMachineId ?? _machines.first['id'] as String;
+            final selectedM = _machines.firstWhere((m) => m['id'] == machineId, orElse: () => _machines.first);
+            if (isMachineOffline(selectedM['last_heartbeat'])) {
+              setDialogState(() => error = 'Mesin "${selectedM['nama'] ?? machineId}" sedang offline. Nyalakan hardware ESP32.');
+              return;
+            }
             await _svc.setMachineWaitingUid(machineId);
             setDialogState(() { scanningUid = true; error = null; });
             uidSub?.cancel();
@@ -102,6 +124,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             if (ctx.mounted) setDialogState(() => scanningUid = false);
           }
 
+          final isMachineOff = _machines.isEmpty || isMachineOffline(_machines.firstOrNull?['last_heartbeat']);
+
           return AlertDialog(
             backgroundColor: AppTheme.cardColor,
             title: const Text('Daftarkan Siswa Baru'),
@@ -111,18 +135,29 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 children: [
                   if (_machines.isNotEmpty) ...[
                     DropdownButtonFormField<String>(
-                      initialValue: selectedMachineId,
+                      key: ValueKey(selectedMachineId),
+                      initialValue: _machines.any((m) => m['id'] == selectedMachineId) ? selectedMachineId : null,
+                      isExpanded: true,
                       items: _machines.map((m) {
                         final s = machineStatusStyle(m);
                         return DropdownMenuItem<String>(
                           value: m['id'] as String,
-                          child: Row(children: [
-                            Icon(Icons.circle, size: 8, color: s.color),
-                            const SizedBox(width: 8),
-                            Text(m['nama'] as String? ?? m['id'] as String, style: const TextStyle(fontSize: 13)),
-                            const SizedBox(width: 4),
-                            Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
-                          ]),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.circle, size: 8, color: s.color),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  m['nama'] as String? ?? m['id'] as String,
+                                  style: const TextStyle(fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
+                            ],
+                          ),
                         );
                       }).toList(),
                       onChanged: scanningUid ? null : (v) => setDialogState(() => selectedMachineId = v),
@@ -159,9 +194,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                               ),
                             )
                           : IconButton(
-                              icon: const Icon(Icons.nfc, color: AppTheme.primaryColor),
-                              tooltip: 'Scan Kartu',
-                              onPressed: _machines.isEmpty ? null : startScanUid,
+                              icon: Icon(Icons.nfc, color: isMachineOff ? Colors.white24 : AppTheme.primaryColor),
+                              tooltip: isMachineOff ? 'Mesin offline' : 'Scan Kartu via Mesin',
+                              onPressed: isMachineOff ? null : startScanUid,
                             ),
                     ],
                   ),
@@ -255,7 +290,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               setDialogState(() => error = 'Tidak ada mesin terdaftar.');
               return;
             }
-            final machineId = _machines.first['id'] as String;
+            final machine = _machines.first;
+            if (isMachineOffline(machine['last_heartbeat'])) {
+              setDialogState(() => error = 'Mesin "${machine['nama'] ?? machine['id']}" sedang offline. Nyalakan hardware ESP32.');
+              return;
+            }
+            final machineId = machine['id'] as String;
             await _svc.setMachineWaitingUid(machineId);
             setDialogState(() { scanningUid = true; error = null; });
             uidSub?.cancel();
@@ -274,6 +314,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             if (_machines.isNotEmpty) await _svc.resetMachine(_machines.first['id'] as String);
             if (ctx.mounted) setDialogState(() => scanningUid = false);
           }
+
+          final isMachineOff = _machines.isEmpty || isMachineOffline(_machines.firstOrNull?['last_heartbeat']);
 
           return AlertDialog(
           backgroundColor: AppTheme.cardColor,
@@ -302,9 +344,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                           ),
                         )
                       : IconButton(
-                          icon: const Icon(Icons.nfc, color: AppTheme.primaryColor),
-                          tooltip: 'Scan Kartu',
-                          onPressed: startScan,
+                          icon: Icon(Icons.nfc, color: isMachineOff ? Colors.white24 : AppTheme.primaryColor),
+                          tooltip: isMachineOff ? 'Mesin offline' : 'Scan Kartu via Mesin',
+                          onPressed: isMachineOff ? null : startScan,
                         ),
                 ],
               ),
@@ -368,7 +410,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   await _svc.updateUser(docId, {
                     'nama': namaCtrl.text.trim(),
                     'nis': nisCtrl.text.trim(),
-                    if (uidKartuCtrl.text.trim().isNotEmpty) 'uid_kartu': uidKartuCtrl.text.trim(),
+                    if (uidKartuCtrl.text.trim().isNotEmpty) 'uid_kartu': uidKartuCtrl.text.trim().toUpperCase(),
                   });
                   final saldoText = saldoCtrl.text.trim().replaceAll('.', '');
                   if (saldoText.isNotEmpty) {
@@ -413,85 +455,264 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     }
   }
 
+  Widget _buildTopBar(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: AppTheme.bgColor,
+        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 600;
+          final searchField = SizedBox(
+            height: 42,
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _searchQuery = v),
+              style: const TextStyle(fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Cari nama, NIS, username, UID...',
+                hintStyle: const TextStyle(fontSize: 13, color: Colors.white38),
+                prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Colors.white38),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 16),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                fillColor: AppTheme.cardColor,
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.white12)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.secondaryColor)),
+              ),
+            ),
+          );
+
+          final countBadge = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${_filteredStudents.length} Siswa',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+            ),
+          );
+
+          final addButton = FilledButton.icon(
+            onPressed: _showRegisterDialog,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Daftar Siswa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.primaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+
+          if (isNarrow) {
+            return Column(
+              children: [
+                Row(
+                  children: [
+                    countBadge,
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded, size: 20),
+                      tooltip: 'Refresh',
+                      onPressed: _load,
+                    ),
+                    const SizedBox(width: 8),
+                    addButton,
+                  ],
+                ),
+                const SizedBox(height: 10),
+                searchField,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: searchField),
+              const SizedBox(width: 12),
+              countBadge,
+              const SizedBox(width: 10),
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+                tooltip: 'Refresh',
+                onPressed: _load,
+              ),
+              const SizedBox(width: 8),
+              addButton,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    if (_searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off_rounded, size: 48, color: Colors.white24),
+            const SizedBox(height: 12),
+            Text(
+              'Tidak ada siswa cocok dengan "$_searchQuery"',
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () {
+                _searchCtrl.clear();
+                setState(() => _searchQuery = '');
+              },
+              child: const Text('Reset Pencarian'),
+            ),
+          ],
+        ),
+      );
+    }
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.people_outline_rounded, size: 54, color: Colors.white24),
+          const SizedBox(height: 12),
+          const Text('Belum ada siswa terdaftar', style: TextStyle(color: Colors.white54, fontSize: 15)),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _showRegisterDialog,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Daftar Siswa Sekarang'),
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.primaryColor),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Data Siswa'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
-          IconButton(icon: const Icon(Icons.person_add_outlined), onPressed: _showRegisterDialog),
-        ],
+        title: const Text('Data Siswa', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _students.isEmpty
-              ? const Center(child: Text('Belum ada siswa terdaftar'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _students.length,
-                  itemBuilder: (ctx, i) {
-                    final s = _students[i];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardColor,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: Row(
-                        children: [
-                          const CircleAvatar(
-                            backgroundColor: AppTheme.primaryColor,
-                            child: Icon(Icons.person, color: Colors.white),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
+        children: [
+          _buildTopBar(context),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredStudents.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        itemCount: _filteredStudents.length,
+                        itemBuilder: (ctx, i) {
+                          final s = _filteredStudents[i];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppTheme.cardColor,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            ),
+                            child: Row(
                               children: [
-                                Text(s.nama, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                Text('NIS: ${s.nis}  •  @${s.username ?? '-'}',
-                                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                Text(s.uidKartu ?? '-', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.2),
+                                  child: const Icon(Icons.person, color: AppTheme.primaryColor, size: 22),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(s.nama, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                                      const SizedBox(height: 3),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 4,
+                                        children: [
+                                          Text('NIS: ${s.nis}',
+                                              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                          if (s.username != null && s.username!.isNotEmpty)
+                                            Text('@${s.username}',
+                                                style: const TextStyle(color: AppTheme.secondaryColor, fontSize: 12)),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            s.uidKartu != null && s.uidKartu!.isNotEmpty ? Icons.nfc_rounded : Icons.credit_card_off_outlined,
+                                            size: 13,
+                                            color: s.uidKartu != null && s.uidKartu!.isNotEmpty ? const Color(0xFF10B981) : Colors.white38,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            s.uidKartu != null && s.uidKartu!.isNotEmpty ? s.uidKartu! : 'Belum ada kartu',
+                                            style: TextStyle(
+                                              color: s.uidKartu != null && s.uidKartu!.isNotEmpty ? Colors.white60 : Colors.white38,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      _fmt.format(s.saldo),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF10B981)),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.edit_outlined, color: Colors.white60, size: 19),
+                                          tooltip: 'Edit Siswa',
+                                          onPressed: () => _showEditDialog(s),
+                                          padding: const EdgeInsets.all(6),
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 19),
+                                          tooltip: 'Hapus Siswa',
+                                          onPressed: () => _confirmDelete(s),
+                                          padding: const EdgeInsets.all(6),
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(_fmt.format(s.saldo),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryColor)),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined, color: Colors.white54, size: 20),
-                                    onPressed: () => _showEditDialog(s),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 20),
-                                    onPressed: () => _confirmDelete(s),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showRegisterDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Daftar Siswa'),
+          ),
+        ],
       ),
     );
   }

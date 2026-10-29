@@ -29,10 +29,23 @@ class PenjualManagementScreen extends StatefulWidget {
 class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
   final _svc = FirebaseService();
   final _fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
   List<UserModel> _penjual = [];
   List<Map<String, dynamic>> _machines = [];
   bool _loading = true;
   StreamSubscription<List<Map<String, dynamic>>>? _machinesSub;
+
+  List<UserModel> get _filteredPenjual {
+    if (_searchQuery.trim().isEmpty) return _penjual;
+    final q = _searchQuery.trim().toLowerCase();
+    return _penjual.where((p) {
+      final matchName = p.nama.toLowerCase().contains(q);
+      final matchUser = (p.username ?? '').toLowerCase().contains(q);
+      final matchCard = (p.uidKartu ?? '').toLowerCase().contains(q);
+      return matchName || matchUser || matchCard;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -46,6 +59,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
 
   @override
   void dispose() {
+    _searchCtrl.dispose();
     _machinesSub?.cancel();
     super.dispose();
   }
@@ -82,6 +96,11 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
               return;
             }
             final machineId = selectedMachineId ?? _machines.first['id'] as String;
+            final selectedM = _machines.firstWhere((m) => m['id'] == machineId, orElse: () => _machines.first);
+            if (isMachineOffline(selectedM['last_heartbeat'])) {
+              setDialogState(() => error = 'Mesin "${selectedM['nama'] ?? machineId}" sedang offline. Nyalakan hardware ESP32.');
+              return;
+            }
             await _svc.setMachineWaitingUid(machineId);
             setDialogState(() { scanningUid = true; error = null; });
             uidSub?.cancel();
@@ -101,6 +120,9 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
             if (machineId != null) await _svc.resetMachine(machineId);
             if (ctx.mounted) setDialogState(() => scanningUid = false);
           }
+
+          final selectedM = _machines.firstWhere((m) => m['id'] == selectedMachineId, orElse: () => _machines.firstOrNull ?? {});
+          final isMachineOff = _machines.isEmpty || isMachineOffline(selectedM['last_heartbeat']);
 
           return AlertDialog(
             backgroundColor: AppTheme.cardColor,
@@ -125,18 +147,29 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                   const SizedBox(height: 12),
                   if (_machines.isNotEmpty) ...[
                     DropdownButtonFormField<String>(
-                      initialValue: selectedMachineId,
+                      key: ValueKey(selectedMachineId),
+                      initialValue: _machines.any((m) => m['id'] == selectedMachineId) ? selectedMachineId : null,
+                      isExpanded: true,
                       items: _machines.map((m) {
                         final s = machineStatusStyle(m);
                         return DropdownMenuItem<String>(
                           value: m['id'] as String,
-                          child: Row(children: [
-                            Icon(Icons.circle, size: 8, color: s.color),
-                            const SizedBox(width: 8),
-                            Text(m['nama'] as String? ?? m['id'] as String, style: const TextStyle(fontSize: 13)),
-                            const SizedBox(width: 4),
-                            Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
-                          ]),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.circle, size: 8, color: s.color),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  m['nama'] as String? ?? m['id'] as String,
+                                  style: const TextStyle(fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
+                            ],
+                          ),
                         );
                       }).toList(),
                       onChanged: scanningUid ? null : (v) => setDialogState(() => selectedMachineId = v),
@@ -173,9 +206,9 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                               ),
                             )
                           : IconButton(
-                              icon: const Icon(Icons.nfc, color: AppTheme.primaryColor),
-                              tooltip: 'Scan Kartu',
-                              onPressed: _machines.isEmpty ? null : startScan,
+                              icon: Icon(Icons.nfc, color: isMachineOff ? Colors.white24 : AppTheme.primaryColor),
+                              tooltip: isMachineOff ? 'Mesin offline' : 'Scan Kartu via Mesin',
+                              onPressed: isMachineOff ? null : startScan,
                             ),
                     ],
                   ),
@@ -253,6 +286,11 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
               return;
             }
             final machineId = selectedMachineId ?? _machines.first['id'] as String;
+            final selectedM = _machines.firstWhere((m) => m['id'] == machineId, orElse: () => _machines.first);
+            if (isMachineOffline(selectedM['last_heartbeat'])) {
+              setDialogState(() => error = 'Mesin "${selectedM['nama'] ?? machineId}" sedang offline. Nyalakan hardware ESP32.');
+              return;
+            }
             await _svc.setMachineWaitingUid(machineId);
             setDialogState(() { scanningUid = true; error = null; });
             uidSub?.cancel();
@@ -273,6 +311,9 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
             if (ctx.mounted) setDialogState(() => scanningUid = false);
           }
 
+          final selectedM = _machines.firstWhere((m) => m['id'] == selectedMachineId, orElse: () => _machines.firstOrNull ?? {});
+          final isMachineOff = _machines.isEmpty || isMachineOffline(selectedM['last_heartbeat']);
+
           return AlertDialog(
             backgroundColor: AppTheme.cardColor,
             title: const Text('Edit Penjual'),
@@ -284,18 +325,29 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                   const SizedBox(height: 12),
                   if (_machines.isNotEmpty) ...[
                     DropdownButtonFormField<String>(
-                      initialValue: selectedMachineId,
+                      key: ValueKey(selectedMachineId),
+                      initialValue: _machines.any((m) => m['id'] == selectedMachineId) ? selectedMachineId : null,
+                      isExpanded: true,
                       items: _machines.map((m) {
                         final s = machineStatusStyle(m);
                         return DropdownMenuItem<String>(
                           value: m['id'] as String,
-                          child: Row(children: [
-                            Icon(Icons.circle, size: 8, color: s.color),
-                            const SizedBox(width: 8),
-                            Text(m['nama'] as String? ?? m['id'] as String, style: const TextStyle(fontSize: 13)),
-                            const SizedBox(width: 4),
-                            Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
-                          ]),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.circle, size: 8, color: s.color),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  m['nama'] as String? ?? m['id'] as String,
+                                  style: const TextStyle(fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
+                            ],
+                          ),
                         );
                       }).toList(),
                       onChanged: scanningUid ? null : (v) => setDialogState(() => selectedMachineId = v),
@@ -336,9 +388,9 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                               ),
                             )
                           : IconButton(
-                              icon: const Icon(Icons.nfc, color: AppTheme.primaryColor),
-                              tooltip: 'Scan Kartu',
-                              onPressed: _machines.isEmpty ? null : startScan,
+                              icon: Icon(Icons.nfc, color: isMachineOff ? Colors.white24 : AppTheme.primaryColor),
+                              tooltip: isMachineOff ? 'Mesin offline' : 'Scan Kartu via Mesin',
+                              onPressed: isMachineOff ? null : startScan,
                             ),
                     ],
                   ),
@@ -405,7 +457,7 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
                   try {
                     final updates = <String, dynamic>{'nama': namaCtrl.text.trim()};
                     final uid = uidKartuCtrl.text.trim();
-                    if (uid.isNotEmpty) updates['uid_kartu'] = uid;
+                    if (uid.isNotEmpty) updates['uid_kartu'] = uid.toUpperCase();
                     await _svc.updateUser(p.authUid!, updates);
 
                     final saldoText = saldoCtrl.text.trim().replaceAll('.', '');
@@ -452,87 +504,258 @@ class _PenjualManagementScreenState extends State<PenjualManagementScreen> {
     }
   }
 
+  Widget _buildTopBar(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: AppTheme.bgColor,
+        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 600;
+          final searchField = SizedBox(
+            height: 42,
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _searchQuery = v),
+              style: const TextStyle(fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Cari nama, username, UID kartu...',
+                hintStyle: const TextStyle(fontSize: 13, color: Colors.white38),
+                prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Colors.white38),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 16),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                fillColor: AppTheme.cardColor,
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.white12)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.secondaryColor)),
+              ),
+            ),
+          );
+
+          final countBadge = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${_filteredPenjual.length} Penjual',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+            ),
+          );
+
+          final addButton = FilledButton.icon(
+            onPressed: _showAddDialog,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Tambah Penjual', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFF59E0B),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+
+          if (isNarrow) {
+            return Column(
+              children: [
+                Row(
+                  children: [
+                    countBadge,
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded, size: 20),
+                      tooltip: 'Refresh',
+                      onPressed: _load,
+                    ),
+                    const SizedBox(width: 8),
+                    addButton,
+                  ],
+                ),
+                const SizedBox(height: 10),
+                searchField,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: searchField),
+              const SizedBox(width: 12),
+              countBadge,
+              const SizedBox(width: 10),
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+                tooltip: 'Refresh',
+                onPressed: _load,
+              ),
+              const SizedBox(width: 8),
+              addButton,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    if (_searchQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off_rounded, size: 48, color: Colors.white24),
+            const SizedBox(height: 12),
+            Text(
+              'Tidak ada penjual cocok dengan "$_searchQuery"',
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () {
+                _searchCtrl.clear();
+                setState(() => _searchQuery = '');
+              },
+              child: const Text('Reset Pencarian'),
+            ),
+          ],
+        ),
+      );
+    }
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.storefront_outlined, size: 54, color: Colors.white24),
+          const SizedBox(height: 12),
+          const Text('Belum ada penjual terdaftar', style: TextStyle(color: Colors.white54, fontSize: 15)),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _showAddDialog,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Tambah Penjual Sekarang'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFF59E0B),
+              foregroundColor: Colors.black,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Manajemen Penjual'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
-          IconButton(icon: const Icon(Icons.person_add_outlined), onPressed: _showAddDialog),
-        ],
+        title: const Text('Manajemen Penjual', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _penjual.isEmpty
-              ? const Center(child: Text('Belum ada penjual terdaftar'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _penjual.length,
-                  itemBuilder: (ctx, i) {
-                    final p = _penjual[i];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardColor,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: Row(
-                        children: [
-                          const CircleAvatar(
-                            backgroundColor: Color(0xFFF59E0B),
-                            child: Icon(Icons.store, color: Colors.white),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
+        children: [
+          _buildTopBar(context),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredPenjual.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        itemCount: _filteredPenjual.length,
+                        itemBuilder: (ctx, i) {
+                          final p = _filteredPenjual[i];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppTheme.cardColor,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            ),
+                            child: Row(
                               children: [
-                                Text(p.nama, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                Text('@${p.username ?? '-'}',
-                                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                if (p.uidKartu != null && p.uidKartu!.isNotEmpty)
-                                  Text('Kartu: ${p.uidKartu}',
-                                      style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                                  child: const Icon(Icons.storefront_rounded, color: Color(0xFFF59E0B), size: 22),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(p.nama, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                                      const SizedBox(height: 3),
+                                      Text('@${p.username ?? '-'}',
+                                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            p.uidKartu != null && p.uidKartu!.isNotEmpty ? Icons.nfc_rounded : Icons.credit_card_off_outlined,
+                                            size: 13,
+                                            color: p.uidKartu != null && p.uidKartu!.isNotEmpty ? const Color(0xFF10B981) : Colors.white38,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            p.uidKartu != null && p.uidKartu!.isNotEmpty ? p.uidKartu! : 'Belum ada kartu',
+                                            style: TextStyle(
+                                              color: p.uidKartu != null && p.uidKartu!.isNotEmpty ? Colors.white60 : Colors.white38,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      _fmt.format(p.saldo),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFFF59E0B)),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.edit_outlined, color: Colors.white60, size: 19),
+                                          tooltip: 'Edit Penjual',
+                                          onPressed: () => _showEditDialog(p),
+                                          padding: const EdgeInsets.all(6),
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 19),
+                                          tooltip: 'Hapus Penjual',
+                                          onPressed: () => _confirmDelete(p),
+                                          padding: const EdgeInsets.all(6),
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(_fmt.format(p.saldo),
-                                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF59E0B))),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined, color: Colors.white54, size: 20),
-                                    onPressed: () => _showEditDialog(p),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 20),
-                                    onPressed: () => _confirmDelete(p),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Tambah Penjual'),
+          ),
+        ],
       ),
     );
   }

@@ -28,6 +28,7 @@ class NBPayApp extends StatelessWidget {
       child: MaterialApp(
         title: 'NBPay',
         theme: AppTheme.darkTheme,
+        scrollBehavior: const AppScrollBehavior(),
         debugShowCheckedModeBanner: false,
         home: const AuthGate(),
       ),

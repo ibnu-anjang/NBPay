@@ -2,11 +2,12 @@
 class UserModel {
   final String? uidKartu;
   final String nama;
-  final String role; // 'siswa' or 'admin'
+  final String role; // 'siswa' | 'admin' | 'penjual'
   final double saldo;
   final String nis;
   final String? username;
   final String? authUid;
+  final bool isFrozen;
 
   UserModel({
     this.uidKartu,
@@ -16,6 +17,7 @@ class UserModel {
     required this.nis,
     this.username,
     this.authUid,
+    this.isFrozen = false,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> data) {
@@ -27,6 +29,7 @@ class UserModel {
       nis: data['nis'] ?? '',
       username: data['username'],
       authUid: data['auth_uid'],
+      isFrozen: data['is_frozen'] ?? false,
     );
   }
 
@@ -39,6 +42,7 @@ class UserModel {
       'nis': nis,
       if (username != null) 'username': username,
       if (authUid != null) 'auth_uid': authUid,
+      'is_frozen': isFrozen,
     };
   }
 }

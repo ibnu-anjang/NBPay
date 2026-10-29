@@ -7,6 +7,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <Preferences.h>
+#include <esp_idf_version.h>
 #include <esp_task_wdt.h>
 #include <ArduinoJson.h>
 #include <time.h>
@@ -447,9 +448,9 @@ void pollFirestore() {
       }
 
       long remoteAmount = 0;
-      if (fields["amount"].containsKey("integerValue")) {
+      if (!fields["amount"]["integerValue"].isNull()) {
         remoteAmount = fields["amount"]["integerValue"].as<long>();
-      } else if (fields["amount"].containsKey("doubleValue")) {
+      } else if (!fields["amount"]["doubleValue"].isNull()) {
         remoteAmount = fields["amount"]["doubleValue"].as<long>();
       }
 
@@ -488,7 +489,7 @@ void pollFirestore() {
       if (currentMode == 1 && fbStatus == "waiting_check" && (newStatus == "showing_saldo" || newStatus == "success" || newStatus == "error")) {
         fbNamaResult = fields["nama_result"]["stringValue"] | "";
         
-        if (fields["saldo_result"].containsKey("integerValue")) {
+        if (!fields["saldo_result"]["integerValue"].isNull()) {
           fbSaldoResult = fields["saldo_result"]["integerValue"].as<long>();
         } else {
           fbSaldoResult = fields["saldo_result"]["doubleValue"].as<long>();
@@ -501,7 +502,7 @@ void pollFirestore() {
       else if (currentMode == 2 && (fbStatus == "waiting_process" || fbStatus == "waiting_tap") && (newStatus == "success" || newStatus == "error")) {
         fbNamaResult = fields["nama_result"]["stringValue"] | "";
         
-        if (fields["saldo_result"].containsKey("integerValue")) {
+        if (!fields["saldo_result"]["integerValue"].isNull()) {
           fbSaldoResult = fields["saldo_result"]["integerValue"].as<long>();
         } else {
           fbSaldoResult = fields["saldo_result"]["doubleValue"].as<long>();
@@ -758,16 +759,67 @@ void handleRFID() {
     updateDisplay();
     
     if (app.ready()) {
-      String path = "machine_commands/" + MACHINE_ID;
-      Document<Values::Value> doc;
-      doc.setContent("{\"fields\":{\"status\":{\"stringValue\":\"waiting_check\"}, \"tujuan\":{\"stringValue\":\"cek_saldo\"}, \"last_uid\":{\"stringValue\":\"" + uid + "\"}}}");
-      PatchDocumentOptions patchOptions(DocumentMask("status,tujuan,last_uid"), DocumentMask(), Precondition());
-      Docs.patch(aClient, Firestore::Parent(FIREBASE_PROJECT_ID), path, patchOptions, doc);
+      Serial.printf("[INFO] Cek saldo mandiri langsung dari Firestore untuk UID: %s\n", uid.c_str());
+      String userPath = "users/" + uid;
+      String userPayload = Docs.get(aClient, Firestore::Parent(FIREBASE_PROJECT_ID), userPath, GetDocumentOptions());
       
-      if (aClient.lastError().code() != 0) {
-        Serial.printf("[ERROR] Balance check request patch failed: %s (code: %d)\n", aClient.lastError().message().c_str(), aClient.lastError().code());
+      if (aClient.lastError().code() == 0) {
+        JsonDocument userDoc;
+        DeserializationError err = deserializeJson(userDoc, userPayload);
+        if (!err && !userDoc["fields"].isNull()) {
+          JsonObject uFields = userDoc["fields"];
+          bool isFrozen = false;
+          if (!uFields["is_frozen"].isNull()) {
+            isFrozen = uFields["is_frozen"]["booleanValue"] | false;
+          }
+          
+          if (isFrozen) {
+            fbStatus = "error";
+            fbNamaResult = "KARTU DIBEKUKAN!";
+            fbSaldoResult = 0;
+            modeTimeout = millis();
+            updateDisplay();
+            playBeep(4);
+            Serial.println("[WARN] Kartu ini sedang dibekukan oleh pemilik.");
+          } else {
+            fbNamaResult = uFields["nama"]["stringValue"] | "Siswa";
+            if (!uFields["saldo"]["integerValue"].isNull()) {
+              fbSaldoResult = uFields["saldo"]["integerValue"].as<long>();
+            } else if (!uFields["saldo"]["doubleValue"].isNull()) {
+              fbSaldoResult = uFields["saldo"]["doubleValue"].as<long>();
+            } else {
+              fbSaldoResult = 0;
+            }
+            fbStatus = "showing_saldo";
+            modeTimeout = millis();
+            updateDisplay();
+            playBeep(3);
+            Serial.printf("[INFO] Saldo ditemukan: Rp %ld untuk %s\n", fbSaldoResult, fbNamaResult.c_str());
+          }
+          
+          // Sinkronisasi status ke machine_commands agar termonitor di dashboard admin/web
+          String path = "machine_commands/" + MACHINE_ID;
+          Document<Values::Value> doc;
+          doc.setContent("{\"fields\":{\"status\":{\"stringValue\":\"" + fbStatus + "\"}, \"tujuan\":{\"stringValue\":\"cek_saldo\"}, \"last_uid\":{\"stringValue\":\"" + uid + "\"}, \"nama_result\":{\"stringValue\":\"" + fbNamaResult + "\"}, \"saldo_result\":{\"integerValue\":\"" + String(fbSaldoResult) + "\"}}}");
+          PatchDocumentOptions patchOptions(DocumentMask("status,tujuan,last_uid,nama_result,saldo_result"), DocumentMask(), Precondition());
+          Docs.patch(aClient, Firestore::Parent(FIREBASE_PROJECT_ID), path, patchOptions, doc);
+        } else {
+          fbStatus = "error";
+          fbNamaResult = "Kartu Tak Dikenal";
+          fbSaldoResult = 0;
+          modeTimeout = millis();
+          updateDisplay();
+          playBeep(4);
+          Serial.println("[ERROR] UID tidak terdaftar di koleksi users.");
+        }
       } else {
-        Serial.println("[INFO] Balance check request patch successful.");
+        Serial.printf("[ERROR] Gagal membaca user doc: %s (code %d)\n", aClient.lastError().message().c_str(), aClient.lastError().code());
+        fbStatus = "error";
+        fbNamaResult = "Koneksi Gagal";
+        fbSaldoResult = 0;
+        modeTimeout = millis();
+        updateDisplay();
+        playBeep(4);
       }
     }
   }
@@ -805,7 +857,16 @@ void setup() {
   digitalWrite(TFT_BL, HIGH);
   lastActivity = millis();
 
+#if defined(ESP_IDF_VERSION_MAJOR) && ESP_IDF_VERSION_MAJOR >= 5
+  esp_task_wdt_config_t twdt_config = {
+      .timeout_ms = WDT_TIMEOUT * 1000,
+      .idle_core_mask = 0,
+      .trigger_panic = true,
+  };
+  esp_task_wdt_init(&twdt_config);
+#else
   esp_task_wdt_init(WDT_TIMEOUT, true);
+#endif
   esp_task_wdt_add(NULL);
 
   preferences.begin("edc_config", false);

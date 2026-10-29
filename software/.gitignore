@@ -62,3 +62,4 @@ build/
 android/local.properties
 ios/Pods/
 .gradle/
+.firebase/

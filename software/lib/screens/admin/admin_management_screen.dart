@@ -181,63 +181,125 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Data Admin'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
-          IconButton(icon: const Icon(Icons.person_add_outlined), onPressed: _showAddDialog),
-        ],
+        title: const Text('Data Admin', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _admins.isEmpty
-              ? const Center(child: Text('Belum ada admin terdaftar'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _admins.length,
-                  itemBuilder: (ctx, i) {
-                    final a = _admins[i];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardColor,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: Row(
-                        children: [
-                          const CircleAvatar(
-                            backgroundColor: Color(0xFF8B5CF6),
-                            child: Icon(Icons.admin_panel_settings, color: Colors.white),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: AppTheme.bgColor,
+              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${_admins.length} Admin',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  tooltip: 'Refresh',
+                  onPressed: _load,
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _showAddDialog,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Tambah Admin', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF8B5CF6),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _admins.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.admin_panel_settings_outlined, size: 54, color: Colors.white24),
+                            const SizedBox(height: 12),
+                            const Text('Belum ada admin terdaftar', style: TextStyle(color: Colors.white54, fontSize: 15)),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: _showAddDialog,
+                              icon: const Icon(Icons.add_rounded, size: 18),
+                              label: const Text('Tambah Admin Sekarang'),
+                              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF8B5CF6)),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        itemCount: _admins.length,
+                        itemBuilder: (ctx, i) {
+                          final a = _admins[i];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppTheme.cardColor,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            ),
+                            child: Row(
                               children: [
-                                Text(a.nama, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                Text('@${a.username ?? '-'}',
-                                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
+                                  child: const Icon(Icons.admin_panel_settings, color: Color(0xFF8B5CF6), size: 22),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(a.nama, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                                      const SizedBox(height: 3),
+                                      Text('@${a.username ?? '-'}',
+                                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, color: Colors.white60, size: 19),
+                                  tooltip: 'Edit Admin',
+                                  onPressed: () => _showEditDialog(a),
+                                  padding: const EdgeInsets.all(6),
+                                  constraints: const BoxConstraints(),
+                                ),
+                                const SizedBox(width: 6),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 19),
+                                  tooltip: 'Hapus Admin',
+                                  onPressed: () => _confirmDelete(a),
+                                  padding: const EdgeInsets.all(6),
+                                  constraints: const BoxConstraints(),
+                                ),
                               ],
                             ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.edit_outlined, color: Colors.white54),
-                            onPressed: () => _showEditDialog(a),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444)),
-                            onPressed: () => _confirmDelete(a),
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Tambah Admin'),
+          ),
+        ],
       ),
     );
   }

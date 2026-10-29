@@ -35,6 +35,14 @@ class PaymentProvider extends ChangeNotifier {
         _handleCekSaldo(state.lastUid!);
       } else if (state.status == 'waiting_uid' && state.lastUid != null && !isProcessing && tujuan == 'topup_daftar') {
         _handleTopupDaftar(state.lastUid!);
+      } else if (state.status == 'waiting_process' && !isProcessing) {
+        // Hardware transitioned to waiting_process but no handler consumed it — auto-reset after delay
+        Future.delayed(const Duration(seconds: 15), () async {
+          if (machineState?.status == 'waiting_process') {
+            debugPrint("waiting_process stuck — auto reset");
+            await _service.resetMachine(currentMachineId!);
+          }
+        });
       }
 
       _safeNotify();

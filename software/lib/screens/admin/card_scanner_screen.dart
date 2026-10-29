@@ -37,7 +37,7 @@ class _CardScannerScreenState extends State<CardScannerScreen> {
 
   // Topup form
   late TextEditingController _amountCtrl;
-  List<int> _quickAmounts = [10000, 20000, 50000, 100000];
+  List<int> _quickAmounts = [10000, 20000, 30000, 50000, 75000, 100000, 150000, 200000, 500000];
   StreamSubscription<List<int>>? _qaSub;
 
   @override
@@ -285,24 +285,46 @@ class _CardScannerScreenState extends State<CardScannerScreen> {
   }
 
   Widget _buildScannerUI() {
+    final selectedM = _machines.firstWhere((m) => m['id'] == _selectedMachineId, orElse: () => {});
+    final isOffline = isMachineOffline(selectedM['last_heartbeat']);
+
     if (!_showingOptions || _scannedUid == null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.nfc, size: 64, color: Colors.white38),
-            const SizedBox(height: 16),
-            const Text(
-              'Siap menerima scan kartu',
-              style: TextStyle(fontSize: 18, color: Colors.white70),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: () => setState(() => _selectedMachineId = null),
-              icon: const Icon(Icons.arrow_back),
-              label: const Text('Ganti Mesin'),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                isOffline ? Icons.wifi_off_rounded : Icons.nfc,
+                size: 64,
+                color: isOffline ? const Color(0xFFEF4444) : Colors.white38,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                isOffline ? 'Mesin Sedang Offline' : 'Siap menerima scan kartu',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isOffline ? const Color(0xFFFCA5A5) : Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isOffline
+                    ? 'Nyalakan hardware ESP32 "${selectedM['nama'] ?? _selectedMachineId}" sebelum scan kartu.'
+                    : 'Tempelkan kartu ke mesin "${selectedM['nama'] ?? _selectedMachineId}"...',
+                style: const TextStyle(color: Colors.white54, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () => setState(() => _selectedMachineId = null),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Ganti Mesin'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -407,12 +429,17 @@ class _CardScannerScreenState extends State<CardScannerScreen> {
             const SizedBox(height: 16),
             _buildTextField(_amountCtrl, 'Jumlah (Rp)', Icons.money),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
+            HorizontalScrollChips(
               children: _quickAmounts.map((amount) {
-                return ActionChip(
-                  label: Text(_fmt.format(amount)),
-                  onPressed: () => _amountCtrl.text = amount.toString(),
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    label: Text(_fmt.format(amount), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    backgroundColor: AppTheme.cardColor,
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    onPressed: () => _amountCtrl.text = amount.toString(),
+                  ),
                 );
               }).toList(),
             ),

@@ -60,6 +60,7 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
               _Field(controller: namaCtrl, label: 'Nama Mesin'),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
+                key: ValueKey(tujuan),
                 initialValue: tujuan,
                 items: _tujuanOptions.map((t) => DropdownMenuItem(
                   value: t,
@@ -123,6 +124,7 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
           backgroundColor: AppTheme.cardColor,
           title: const Text('Ubah Tujuan Mesin'),
           content: DropdownButtonFormField<String>(
+            key: ValueKey(tujuan),
             initialValue: tujuan,
             items: _tujuanOptions.map((t) => DropdownMenuItem(
               value: t,
@@ -178,11 +180,7 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Manajemen Mesin'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: () => setState(() {})),
-          IconButton(icon: const Icon(Icons.add), onPressed: _showAddDialog),
-        ],
+        title: const Text('Manajemen Mesin', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: _svc.streamAllMachines(),
@@ -191,13 +189,72 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final machines = snap.data ?? [];
-          if (machines.isEmpty) {
-            return const Center(child: Text('Belum ada mesin terdaftar'));
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: machines.length,
-            itemBuilder: (ctx, i) {
+
+          return Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.bgColor,
+                  border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${machines.length} Mesin',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded, size: 20),
+                      tooltip: 'Refresh',
+                      onPressed: () => setState(() {}),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _showAddDialog,
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Tambah Mesin', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.secondaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: machines.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.nfc_rounded, size: 54, color: Colors.white24),
+                            const SizedBox(height: 12),
+                            const Text('Belum ada mesin terdaftar', style: TextStyle(color: Colors.white54, fontSize: 15)),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: _showAddDialog,
+                              icon: const Icon(Icons.add_rounded, size: 18),
+                              label: const Text('Daftarkan Mesin Sekarang'),
+                              style: FilledButton.styleFrom(backgroundColor: AppTheme.secondaryColor),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        itemCount: machines.length,
+                        itemBuilder: (ctx, i) {
               final m = machines[i];
               final id = m['id'] as String;
               final nama = m['nama'] as String? ?? id;
@@ -227,6 +284,7 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
                     statusColor = const Color(0xFFF59E0B);
                     statusLabel = 'Menunggu Tap';
                   case 'waiting_check':
+                  case 'waiting_process':
                     statusColor = const Color(0xFF0EA5E9);
                     statusLabel = 'Memproses';
                   case 'showing_saldo':
@@ -330,13 +388,11 @@ class _MachineManagementScreenState extends State<MachineManagementScreen> {
                 ),
               );
             },
+          ),
+              ),
+            ],
           );
         },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Tambah Mesin'),
       ),
     );
   }

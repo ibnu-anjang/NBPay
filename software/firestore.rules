@@ -40,12 +40,26 @@ service cloud.firestore {
 
       allow create, delete: if isAdmin();
 
-      // Penjual can only change saldo (needed for processSale debit/credit).
-      // Siswa cannot write their own doc at all.
+      // Penjual hanya boleh memutasi saldo melalui alur penjualan yang sah.
+      // Mencegah eksploitasi manipulasi saldo bebas:
+      // 1. Field yang berubah HANYA 'saldo'
+      // 2. Nilai saldo harus berupa angka dan tidak boleh negatif (>= 0)
+      // 3. Saldo pembeli/siswa HANYA boleh berkurang (<=)
+      // 4. Saldo penjual HANYA boleh bertambah (>=)
+      // Siswa tidak memiliki izin update saldo sama sekali.
+      // Siswa hanya boleh mengubah status beku kartu (is_frozen) miliknya sendiri jika kartu hilang.
       allow update: if isAdmin()
+                    || (isSignedIn() && resource.data.auth_uid == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_frozen'])
+                        && request.resource.data.is_frozen is bool)
                     || (isPenjual() &&
-                        request.resource.data.diff(resource.data).affectedKeys()
-                            .hasOnly(['saldo']));
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['saldo'])
+                        && request.resource.data.saldo is number
+                        && request.resource.data.saldo >= 0
+                        && (
+                          (userId != request.auth.uid && request.resource.data.saldo <= resource.data.saldo)
+                          || (userId == request.auth.uid && request.resource.data.saldo >= resource.data.saldo)
+                        ));
     }
 
     // ── Transactions ──────────────────────────────────────────────────────────

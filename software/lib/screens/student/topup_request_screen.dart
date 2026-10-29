@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -42,9 +43,23 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
   String _method = 'qris';
   bool _loading = false;
   bool _submitted = false;
+  late int _kodeUnik;
+  double _submittedTotalBayar = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _kodeUnik = 100 + Random().nextInt(900);
+    _amountCtrl.addListener(_onAmountChanged);
+  }
+
+  void _onAmountChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
+    _amountCtrl.removeListener(_onAmountChanged);
     _amountCtrl.dispose();
     _catatanCtrl.dispose();
     _catatanFocus.dispose();
@@ -70,16 +85,23 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
 
     setState(() => _loading = true);
     try {
+      final code = _method != 'cash' ? _kodeUnik : null;
       await _svc.submitTopUpRequest(
         uidKartu: widget.user.uidKartu ?? '',
         namaSiswa: widget.user.nama,
         amount: amount,
         method: _method,
+        kodeUnik: code,
         catatan: _catatanCtrl.text.trim().isEmpty
             ? null
             : _catatanCtrl.text.trim(),
       );
-      if (mounted) setState(() => _submitted = true);
+      if (mounted) {
+        setState(() {
+          _submittedTotalBayar = amount + (code ?? 0);
+          _submitted = true;
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -116,11 +138,30 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
               'Request Terkirim!',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Column(
+                children: [
+                  const Text('Total yang Harus Ditransfer:', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text(
+                    _fmt.format(_submittedTotalBayar),
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF22C55E)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             const Text(
-              'Admin akan memverifikasi pembayaran Anda dan saldo akan ditambahkan setelah dikonfirmasi.',
+              'Admin akan mencocokkan mutasi rekening Anda secara instan. Saldo akan otomatis bertambah setelah disetujui.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white60),
+              style: TextStyle(color: Colors.white60, fontSize: 13),
             ),
             const SizedBox(height: 32),
             ElevatedButton(
@@ -138,6 +179,51 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
       stream: _svc.streamPaymentInfo(),
       builder: (context, snap) {
         final info = snap.data ?? {};
+        final qrisEnabled = info['qris_enabled'] != 'false';
+        final bankEnabled = info['bank_enabled'] != 'false';
+
+        // Auto-select valid active method
+        if (!qrisEnabled && _method == 'qris' && bankEnabled) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _method = 'transfer');
+          });
+        } else if (!bankEnabled && _method == 'transfer' && qrisEnabled) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _method = 'qris');
+          });
+        }
+
+        if (!qrisEnabled && !bankEnabled) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.pause_circle_outline_rounded, size: 64, color: Color(0xFFF59E0B)),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Top-up Online Ditutup',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Admin sedang menonaktifkan metode transfer QRIS & Rekening Bank. Silakan top-up tunai langsung melalui mesin RFID di Tata Usaha sekolah.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+                  ),
+                  const SizedBox(height: 24),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Kembali ke Dashboard'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         return SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -150,28 +236,35 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  _MethodCard(
-                    label: 'QRIS',
-                    icon: Icons.qr_code_2,
-                    selected: _method == 'qris',
-                    onTap: () => setState(() => _method = 'qris'),
-                  ),
-                  const SizedBox(width: 12),
-                  _MethodCard(
-                    label: 'Transfer',
-                    icon: Icons.account_balance,
-                    selected: _method == 'transfer',
-                    onTap: () => setState(() => _method = 'transfer'),
-                  ),
+                  if (qrisEnabled)
+                    Expanded(
+                      child: _MethodCard(
+                        label: 'QRIS',
+                        icon: Icons.qr_code_2,
+                        selected: _method == 'qris',
+                        onTap: () => setState(() => _method = 'qris'),
+                      ),
+                    ),
+                  if (qrisEnabled && bankEnabled)
+                    const SizedBox(width: 12),
+                  if (bankEnabled)
+                    Expanded(
+                      child: _MethodCard(
+                        label: 'Transfer Bank',
+                        icon: Icons.account_balance,
+                        selected: _method == 'transfer',
+                        onTap: () => setState(() => _method = 'transfer'),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 20),
 
-              if (_method == 'qris')
+              if (_method == 'qris' && qrisEnabled)
                 _InfoCard(
                   child: _QrisSection(imageUrl: info['qris_image_url'] ?? ''),
                 )
-              else
+              else if (_method == 'transfer' && bankEnabled)
                 _InfoCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,21 +330,132 @@ class _TopUpRequestScreenState extends State<TopUpRequestScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [10000, 20000, 50000, 100000]
+              HorizontalScrollChips(
+                children: [10000, 20000, 30000, 50000, 75000, 100000, 150000, 200000, 500000]
                     .map(
-                      (a) => ActionChip(
-                        label: Text(_fmt.format(a)),
-                        onPressed: () => setState(
-                            () => _amountCtrl.text = NumberFormat('#,###', 'id_ID').format(a)),
-                        backgroundColor: AppTheme.cardColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                      (a) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          label: Text(
+                            _fmt.format(a),
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                          onPressed: () => setState(
+                              () => _amountCtrl.text = NumberFormat('#,###', 'id_ID').format(a)),
+                          backgroundColor: AppTheme.cardColor,
+                          side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                     )
                     .toList(),
+              ),
+              Builder(
+                builder: (context) {
+                  final parsedAmount = double.tryParse(
+                    _amountCtrl.text.replaceAll('.', '').replaceAll(',', ''),
+                  ) ?? 0;
+                  if (parsedAmount < 10000 || _method == 'cash') {
+                    return const SizedBox.shrink();
+                  }
+                  final totalBayar = parsedAmount + _kodeUnik;
+                  return Container(
+                    margin: const EdgeInsets.only(top: 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Rincian Pembayaran',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0EA5E9).withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'Kode Unik: $_kodeUnik',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0EA5E9),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Nominal Top-up', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                            Text(_fmt.format(parsedAmount), style: const TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Kode Unik Verifikasi', style: TextStyle(color: Color(0xFF0EA5E9), fontSize: 13)),
+                            Text('+ Rp $_kodeUnik', style: const TextStyle(color: Color(0xFF0EA5E9), fontWeight: FontWeight.bold, fontSize: 13)),
+                          ],
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(color: Colors.white12),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total Transfer Tepat', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            Text(
+                              _fmt.format(totalBayar),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF22C55E)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: totalBayar.toInt().toString()));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Total transfer Rp ${totalBayar.toInt()} disalin!')),
+                              );
+                            },
+                            icon: const Icon(Icons.copy, size: 16),
+                            label: Text('Salin Total Bayar: Rp ${totalBayar.toInt()}'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white24),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '💡 Seluruh dana kode unik masuk 100% ke saldo Anda tanpa potongan!',
+                          style: TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 20),
               const Text(
@@ -378,39 +582,37 @@ class _MethodCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: selected
-                ? AppTheme.primaryColor.withValues(alpha: 0.15)
-                : AppTheme.cardColor,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? AppTheme.primaryColor : Colors.white12,
-              width: selected ? 2 : 1,
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTheme.primaryColor.withValues(alpha: 0.15)
+              : AppTheme.cardColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? AppTheme.primaryColor : Colors.white12,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: selected ? AppTheme.primaryColor : Colors.white54,
+              size: 28,
             ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: selected ? AppTheme.primaryColor : Colors.white54,
-                size: 28,
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppTheme.primaryColor : Colors.white70,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? AppTheme.primaryColor : Colors.white70,
-                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

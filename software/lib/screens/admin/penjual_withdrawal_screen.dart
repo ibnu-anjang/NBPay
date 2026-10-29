@@ -93,6 +93,11 @@ class _PenjualWithdrawalScreenState extends State<PenjualWithdrawalScreen> {
       return;
     }
     final machineId = _selectedMachineId ?? _machines.first['id'] as String;
+    final selectedM = _machines.firstWhere((m) => m['id'] == machineId, orElse: () => _machines.first);
+    if (isMachineOffline(selectedM['last_heartbeat'])) {
+      setState(() => _message = 'Mesin "${selectedM['nama'] ?? machineId}" sedang offline. Nyalakan hardware ESP32 terlebih dahulu.');
+      return;
+    }
     await _svc.setMachineWaitingUid(machineId);
     setState(() { _scanningCard = true; _message = null; });
 
@@ -190,6 +195,9 @@ class _PenjualWithdrawalScreenState extends State<PenjualWithdrawalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedM = _machines.firstWhere((m) => m['id'] == _selectedMachineId, orElse: () => _machines.firstOrNull ?? {});
+    final isOffline = _machines.isEmpty || isMachineOffline(selectedM['last_heartbeat']);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Penarikan Saldo Penjual')),
       body: _loadingPenjual
@@ -227,18 +235,28 @@ class _PenjualWithdrawalScreenState extends State<PenjualWithdrawalScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            initialValue: _selectedMachineId,
+                            key: ValueKey(_selectedMachineId),
+                            initialValue: _machines.any((m) => m['id'] == _selectedMachineId) ? _selectedMachineId : null,
+                            isExpanded: true,
                             items: _machines.map((m) {
                               final s = machineStatusStyle(m);
                               return DropdownMenuItem<String>(
                                 value: m['id'] as String,
-                                child: Row(children: [
-                                  Icon(Icons.circle, size: 8, color: s.color),
-                                  const SizedBox(width: 8),
-                                  Text(m['nama'] as String? ?? m['id'] as String),
-                                  const SizedBox(width: 4),
-                                  Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
-                                ]),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.circle, size: 8, color: s.color),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        m['nama'] as String? ?? m['id'] as String,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text('(${s.label})', style: const TextStyle(fontSize: 11, color: Colors.white38)),
+                                  ],
+                                ),
                               );
                             }).toList(),
                             onChanged: _scanningCard ? null : (v) => setState(() => _selectedMachineId = v),
@@ -268,9 +286,9 @@ class _PenjualWithdrawalScreenState extends State<PenjualWithdrawalScreen> {
                         )
                       else
                         TextButton.icon(
-                          onPressed: _machines.isEmpty ? null : _scanCard,
-                          icon: const Icon(Icons.nfc, size: 16),
-                          label: const Text('Scan Kartu'),
+                          onPressed: (_machines.isEmpty || isOffline) ? null : _scanCard,
+                          icon: Icon(isOffline ? Icons.block_rounded : Icons.nfc, size: 16),
+                          label: Text(isOffline ? 'Mesin Offline' : 'Scan Kartu'),
                         ),
                     ],
                   ),
@@ -297,10 +315,12 @@ class _PenjualWithdrawalScreenState extends State<PenjualWithdrawalScreen> {
                     )
                   else
                     DropdownButtonFormField<UserModel>(
-                      initialValue: _selected,
+                      key: ValueKey(_selected?.uidKartu),
+                      initialValue: _penjuals.any((p) => p.uidKartu == _selected?.uidKartu) ? _selected : null,
+                      isExpanded: true,
                       items: _penjuals.map((p) => DropdownMenuItem(
                         value: p,
-                        child: Text('${p.nama} — ${_fmt.format(p.saldo)}'),
+                        child: Text('${p.nama} — ${_fmt.format(p.saldo)}', overflow: TextOverflow.ellipsis),
                       )).toList(),
                       onChanged: (v) => setState(() { _selected = v; _message = null; _amountCtrl.clear(); }),
                       decoration: InputDecoration(
